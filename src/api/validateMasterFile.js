@@ -33,7 +33,7 @@ export async function getNestedSOData() {
         const res = await batchPlay([{ _obj: 'get', _target: [{ _ref: 'layer', _id: layer.id }] }], {});
         const uuid = res[0]?.smartObjectMore?.ID;
         const hasNested = uuid ? (nestedSOMap[uuid] ?? false) : false;
-        console.log(`"${layer.name}" (id:${layer.id}) - SO - ${hasNested ? 'has nested SO' : 'no nested SO'}`);
+        if (hasNested) console.log(`Layer "${layer.name}" (ID: ${layer.id}) has nested Smart Object`);
       }
     }
   } catch (err) {
