@@ -8,8 +8,10 @@ const { constants } = photoshop;
  *
  * Strategy:
  *   1. Build a vocabulary set of every unique word across all EN phrases.
- *   2. Walk UP from the layer to find the "phrase container" — an ancestor
- *      whose grandparent has no parent (depth 2 from document root).
+ *   2. Walk UP from the layer to find the "phrase container" — the highest
+ *      ancestor that still best-matches the same single EN phrase.
+ *      (Stops climbing when the best match flips to a different phrase,
+ *      which means that ancestor holds content from multiple phrases.)
  *   3. Recursively scan inside the container, collecting every name
  *      (folder names, translatable layer baseNames) that contains at least
  *      one word present in the vocabulary. Structural noise is filtered out.
@@ -24,18 +26,19 @@ const { constants } = photoshop;
  * @param {Object} appState - { languageData, selectedLanguage }
  * @returns {{ enPhrase, translatedPhrase, confidence, matchedCandidate } | null}
  */
-export function guessThePhrase(layer, appState) {
-  const enEntries   = appState.languageData?.["EN"];
+export function guessThePhrase(layer, appState) {  const enEntries   = appState.languageData?.["EN"];
   const langEntries = appState.languageData?.[appState.selectedLanguage];
   if (!enEntries || !langEntries) return null;
 
   // Build vocabulary: every unique word that appears in any EN phrase
   const vocabulary = _buildVocabulary(enEntries);
 
-  const candidates = _buildPhraseCandidates(layer, vocabulary);
-  if (candidates.length === 0) return null;
-
+  // Pre-normalise all EN phrases — shared by container-finding and scoring
   const normalizedEN = enEntries.map(e => _normalizeForMatch(e));
+
+  const candidates = _buildPhraseCandidates(layer, vocabulary, normalizedEN);
+  // console.log("Phrase guesser candidates:", candidates);
+  if (candidates.length === 0) return null;
 
   let bestScore = 0, bestShared = 0, bestIndex = -1, bestCandidate = null;
 
@@ -87,10 +90,11 @@ function _stripCopySuffix(name) {
 
 function _normalizeForMatch(str) {
   return str
-    .replace(/\(.*?\)/g, "")   // strip (do not translate!) etc.
+    .replace(/[()]/g, "") // TESTING Removes all opening "(" and closing ")" parentheses from the string while preserving the text inside.
+    // .replace(/\(.*?\)/g, "")   // strip (do not translate!) etc.
     .replace(/\[.*?\]/g, "")   // strip [NUMBER] placeholders
     .toUpperCase()
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, " ") // Replaces all whitespace sequences (spaces, tabs, line breaks) with a single space to normalize text formatting.
     .trim();
 }
 
@@ -133,13 +137,84 @@ function _wordOverlapScore(a, b) {
 }
 
 /**
- * Find the "phrase container" — the ancestor at depth 2 from document root
- * (i.e. its grandparent has no parent).  Returns null if none found.
+ * Find the "phrase container" by walking up the layer hierarchy.
+ *
+ * At each ancestor we collect vocab-filtered names recursively and score
+ * the compound against all EN phrases to find the best-matching phrase.
+ *
+ * Rules:
+ *   1. Seed:    first ancestor that scores ≥ 0.5 → records that phrase
+ *              index as the "target phrase" and saves ancestor as lastGood.
+ *   2. Climb:   keep going UP while the SAME phrase index is still best
+ *              (the true container may be higher, e.g. when noise folders
+ *              like BG / EN sit between the layer and the real container).
+ *   3. Stop:    when best match flips to a DIFFERENT phrase index → this
+ *              level already contains multiple phrases → return lastGood.
+ *   4. Stop:    also when score drops below 0.5 after seeding → return lastGood.
+ *   5. Fallback: if nothing ever seeded, use the old depth-2 logic so
+ *              existing working cases don't regress.
+ *
+ * Handles sub-phrase ambiguity (e.g. "YOU WIN" inside "CONGRATULATIONS YOU WIN"):
+ *   A sub-container with only "you" + "win" seeds to "YOU WIN" (index A).
+ *   Its parent introduces "congratulations" → best match becomes
+ *   "CONGRATULATIONS YOU WIN" (index B ≠ A) → stop → sub-container returned ✓
  */
-function _findPhraseContainer(layer) {
+function _findPhraseContainer(layer, vocabulary, normalizedEN) {
   let current = layer.parent;
+  let seedPhraseIndex  = -1;   // phrase index first matched while climbing
+  let lastGoodAncestor = null; // last ancestor still matching the seed phrase
+
+  while (current && current.parent) { // stop before document root (no parent)
+    const vocabNames = _collectVocabNames(current, vocabulary);
+
+    if (vocabNames.length > 0) {
+      const normCompound = _normalizeForMatch(vocabNames.join("\n"));
+
+      // Find the best-matching EN phrase at this ancestor level
+      let bestScore = 0, bestShared = 0, bestIndex = -1;
+      for (let i = 0; i < normalizedEN.length; i++) {
+        const { ratio, shared } = _wordOverlapScore(normCompound, normalizedEN[i]);
+        if (ratio > bestScore || (ratio === bestScore && shared > bestShared)) {
+          bestScore = ratio; bestShared = shared; bestIndex = i;
+        }
+      }
+
+      if (bestScore >= 0.5) {
+        if (seedPhraseIndex === -1) {
+          // First match — seed the target phrase
+          seedPhraseIndex  = bestIndex;
+          lastGoodAncestor = current;
+          console.log("phraseContainer seed:", current.name, "→ phrase index", bestIndex, "score", bestScore);
+        } else if (bestIndex === seedPhraseIndex) {
+          // Same phrase still wins — true container might be higher, keep climbing
+          lastGoodAncestor = current;
+        } else {
+          // Best match changed → this level spans multiple phrases → stop
+          console.log("phraseContainer stop at:", current.name, "— match flipped from", seedPhraseIndex, "to", bestIndex);
+          break;
+        }
+      } else if (seedPhraseIndex !== -1) {
+        // Score dropped below 0.5 after seeding → stop
+        console.log("phraseContainer stop at:", current.name, "— score dropped to", bestScore);
+        break;
+      }
+    }
+
+    current = current.parent;
+  }
+
+  if (lastGoodAncestor) {
+    console.log("phraseContainer selected:", lastGoodAncestor.name);
+    return lastGoodAncestor;
+  }
+
+  // Fallback: old depth-2 logic (no phrase was ever matched while climbing)
+  current = layer.parent;
   while (current) {
-    if (current.parent && !current.parent.parent) return current;
+    if (current.parent && !current.parent.parent) {
+      console.log("phraseContainer selected (fallback depth-2):", current.name);
+      return current;
+    }
     current = current.parent;
   }
   return null;
@@ -199,14 +274,14 @@ function _collectVocabNames(group, vocabulary) {
 /**
  * Build phrase candidates for scoring against EN phrases.
  *
- * 1. Find the phrase container (depth-2 ancestor from doc root).
+ * 1. Find the phrase container (climb-and-stop heuristic, depth-2 fallback).
  * 2. Collect non-noise ancestor folder names between layer and container.
  * 3. Collect vocab-filtered names inside the container → single compound candidate.
  */
-function _buildPhraseCandidates(layer, vocabulary) {
+function _buildPhraseCandidates(layer, vocabulary, normalizedEN) {
   const candidates = [];
 
-  const container = _findPhraseContainer(layer);
+  const container = _findPhraseContainer(layer, vocabulary, normalizedEN);
 
   // ── Ancestors between layer and container (nearest first) ──
   let current = layer.parent;
@@ -224,6 +299,6 @@ function _buildPhraseCandidates(layer, vocabulary) {
       candidates.push(vocabNames.join("\n"));
     }
   }
-
+  // console.log("Layer candidates:", candidates);
   return candidates;
 }
