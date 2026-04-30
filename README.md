@@ -1,12 +1,10 @@
-# LocalizationMaster — Agent Context Document
+# LocalizationMaster
 
-> **Purpose:** This file gives a fresh AI agent everything it needs to understand the project without reading through all source files. Read this before touching any code.
 
----
 
 ## What Is This?
 
-**LocalizationMaster** is a **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD files. The workflow targets game UI production — PSD files contain translatable text (either inside Smart Objects or as direct text layers) that need to be translated into multiple languages using a pre-prepared Excel translation table.
+**LocalizationMaster** is a **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD files using a pre-prepared Excel translation table.
 
 ---
 
