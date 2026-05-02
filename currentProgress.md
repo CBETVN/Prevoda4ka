@@ -72,16 +72,27 @@ Renamed all comment references from "internal SO document ID" to `SmartObjectMor
 
 ---
 
-## Active investigation — double translation bug 🔍
-**Symptom:** Each SO gets translated twice even though there are no duplicate instances in the document.
+## Status — translation working ✅ (with one known bug)
 
-**Hypothesis:** `translateSmartObject` may change `smartObjectMore.ID` after saving/closing the embedded document. If it does, `ps.getSOid(layer)` on the next `translateAll` iteration returns a new ID not in `processedIds` — guard never fires.
+The double-translation bug has been resolved. The plugin now correctly translates each unique Smart Object exactly once. Deduplication via `processedIds` and `soIdMap` is working as expected.
 
-**Diagnostic logs added** to confirm:
-- `[translateAll]` logs the ID and current `processedIds` before each guard check
-- `[processMatchedFolder]` checks if the ID changed before vs after `translateSmartObject`
+Diagnostic logs were added to both `photoshop.js` and `parsingLogic.js` to confirm the fix, and have since been commented out (marked `// DELETE LATER`).
 
-**Next step:** Run and check console for `ID CHANGED after translation!`
+---
+
+## Known bug — "command unavailable" for locked Smart Objects ⚠️ TODO
+**Symptom:** When `translateSmartObject` is called on a layer that has `locked: true`, the `editSmartObject` batchPlay call fails silently — Photoshop does not open the embedded PSB. The active document stays the same (main PSD). The `mainDocId` guard catches this and returns early, but the `editSmartObject` attempt itself still triggers an internal "command not available" error in Photoshop.
+
+**Example:** `SUPER (DO NOT TRANSLATE)` layer ID 3229 inside `buyBonusBtnActive0Portrait - EXPORT 50%` — confirmed `locked: true` in console logs.
+
+**Fix needed:** Add an early return in `translateSmartObject` (in `photoshop.js`) before calling `editSmartObject`, when `freshSmartObject.locked === true`:
+```js
+if (freshSmartObject.locked) {
+  console.warn(`[translateSmartObject] Skipping "${freshSmartObject.name}" — layer is locked`);
+  return;
+}
+```
+This prevents the failed batchPlay call entirely.
 
 ---
 
