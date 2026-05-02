@@ -37,7 +37,8 @@ export async function translateSmartObject(smartObject, translation) {
         _target: [{ _ref: "layer", _id: smartObjectId }],
         _options: { dialogOptions: "silent" }
       }], { synchronousExecution: true });
-      console.log("Selected Smart Object layer:", smartObject.name, "(ID:", smartObjectId, ")");
+      // DELETE LATER
+      // console.log("Selected Smart Object layer:", smartObject.name, "(ID:", smartObjectId, ")");
       const allDocLayers = getAllLayers(app.activeDocument.layers);
       const freshSmartObject = allDocLayers.find(l => l.id === smartObjectId);
 
@@ -46,21 +47,35 @@ export async function translateSmartObject(smartObject, translation) {
         return;
       }
 
-      // console.log("Entering edit mode for Smart Object:", freshSmartObject.name);
+      // DELETE LATER
+      // console.log(`[translateSmartObject] About to open SO "${freshSmartObject.name}" | kind: ${freshSmartObject.kind} | locked: ${freshSmartObject.locked} | visible: ${freshSmartObject.visible}`);
+      // let anc = freshSmartObject.parent;
+      // while (anc && anc.layers) {
+      //   console.log(`  ancestor: "${anc.name}" locked: ${anc.locked} visible: ${anc.visible}`);
+      //   anc = anc.parent;
+      // }
+      // console.log(`  active doc BEFORE editSmartObject: "${app.activeDocument.name}" id: ${app.activeDocument.id}`);
       const mainDocId = app.activeDocument.id;
       await editSmartObject(freshSmartObject);
+      // DELETE LATER
+      // console.log(`  active doc AFTER  editSmartObject: "${app.activeDocument.name}" id: ${app.activeDocument.id}`);
 
       // Guard: if editSmartObject failed (e.g. "Edit Contents not available"), the active
       // document is still the main PSD. Bail out immediately — do NOT close it.
       if (app.activeDocument.id === mainDocId) {
-        console.warn(`[translateSmartObject] Could not open SO "${freshSmartObject.name}" — skipping`);
+        // DELETE LATER
+        // console.warn(`[translateSmartObject] FAILED to open SO "${freshSmartObject.name}" — doc did not change, still on "${app.activeDocument.name}"`);
         return;
       }
+      // DELETE LATER
+      // console.log(`[translateSmartObject] Successfully opened SO "${freshSmartObject.name}" as "${app.activeDocument.name}"`);
 
       // Fetch all inner layers and their info in one shot AFTER opening the SO
       const allLayers = getAllLayers(app.activeDocument.layers);
       const isThereTextLayer = allLayers.some(l => l.kind === "text");
       if (!isThereTextLayer) {
+        // DELETE LATER
+        // console.warn(`[translateSmartObject] No text layers inside "${freshSmartObject.name}" — closing without save`);
         app.activeDocument.closeWithoutSaving();
         return;
       }

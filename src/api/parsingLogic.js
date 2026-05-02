@@ -230,25 +230,21 @@ export async function translateAll(appState) {
   for (const layer of smartObjectsForProcessing) {
 
     const layerSOId = await ps.getSOid(layer);
-    // DIAGNOSTIC: log the ID we just got and what's currently in processedIds
-    // Hypothesis: translateSmartObject changes smartObjectMore.ID, so the ID queried here
-    // after translation differs from what processMatchedFolder stored — guard never fires.
-    console.log(`[translateAll] layer "${layer.name}" SmartObjectMoreID: ${layerSOId}`);
-    // console.log(`[translateAll] processedIds at this point:`, [...processedIds]);
+    // DELETE LATER
+    // console.log(`[translateAll] layer "${layer.name}" SmartObjectMoreID: ${layerSOId}`);
 
     // Guard: skip if this layer ID was already processed in this run, either as a folder match or as an instance of a matched SO. This prevents duplicate processing of the same layer if it appears in multiple folders or is a nested instance.
     if (processedIds.has(layerSOId)) {
-      // DIAGNOSTIC: confirm the guard fired
-      console.log(`[translateAll] SKIPPING "${layer.name}" — ID ${layerSOId} already in processedIds`);
+      // DELETE LATER
+      // console.log(`[translateAll] SKIPPING "${layer.name}" — ID ${layerSOId} already in processedIds`);
       continue;
     }
-    console.log(`[translateAll] NOT skipped — proceeding with "${layer.name}"`);
-
-    console.log(`Processing layer "${layer.name}"`, `smart objects for processing: ${smartObjectsForProcessing.length}`);
+    // DELETE LATER
+    // console.log(`[translateAll] NOT skipped — proceeding with "${layer.name}"`);
+    // console.log(`Processing layer "${layer.name}"`, `smart objects for processing: ${smartObjectsForProcessing.length}`);
     const guessResult = phraseGuesser.guessThePhrase(layer, appState);
-    if (guessResult) {
-      console.log(`Layer "${layer.name} has to be translated":`, guessResult);
-    }
+    // DELETE LATER
+    // if (guessResult) { console.log(`Layer "${layer.name} has to be translated":`, guessResult); }
     
     const layerENGPhrase = guessResult?.enPhrase;
     const layerContainerFolder = guessResult?.container;
@@ -338,8 +334,12 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   // We need their SmartObjectMoreIDs to detect duplicate instances.
   // (Text layers and other types are handled later without needing SO IDs.)
   let childSOLayers = ps.getAllLayers(folderLayer.layers).filter(layer => layer.kind === constants.LayerKind.SMARTOBJECT);
+  // DELETE LATER
+  // console.log(`[processMatchedFolder] STEP 4: found ${childSOLayers.length} SO child layers in "${folderLayer.name}":`, childSOLayers.map(l => l.name));
   const uniqueChildSOLayers = await ps.purgeSOInstancesFromArray(childSOLayers);
   childSOLayers = uniqueChildSOLayers;
+  // DELETE LATER
+  // console.log(`[processMatchedFolder] STEP 4: after dedup: ${childSOLayers.length} unique SOs`);
   
   // STEP 5: Fetch the full Photoshop descriptor for each child SO in one bulk batchPlay call.
   // From each descriptor we extract smartObjectMore.ID — the SmartObjectMoreID that is
@@ -362,6 +362,8 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
       stackIndex: i,
       layer,
     }));
+  // DELETE LATER
+  // console.log(`[processMatchedFolder] STEP 6: ${childLayers.length} translatable child layers:`, childLayers.map(l => `${l.name}(${l.layer.kind})`));
 
   // STEP 7: Match each child layer to a translated line.
   // Uses a confidence ladder: exact name match → fuzzy name match → stack index fallback.
@@ -374,8 +376,11 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
     transLines
   );
 
+  // DELETE LATER
+  // console.log(`[processMatchedFolder] STEP 7: confidence ${confidence.toFixed(2)} for "${folderLayer.name}"`);
   if (skipped) {
-    console.log(`Skipped "${folderLayer.name}" — ${reason} (confidence: ${confidence})`);
+    // DELETE LATER
+    // console.warn(`[processMatchedFolder] STEP 7: SKIPPED "${folderLayer.name}" — ${reason} (confidence: ${confidence.toFixed(2)})`);
     return;
   }
 
@@ -387,8 +392,8 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
 
     const { text, matchType } = assignment;
     const child = childLayers.find(c => c.id === layerId);
-    // Skip invisible layers — they may be alternate states not meant to be translated now
-    if (!child || !child.layer.visible) continue;
+    if (!child) { /* DELETE LATER: console.warn(`[processMatchedFolder] STEP 8: no child found for layerId ${layerId}`) */ continue; }
+    if (!child.layer.visible) { /* DELETE LATER: console.log(`[processMatchedFolder] STEP 8: skipping invisible layer "${child.layer.name}"`) */ continue; }
 
     if (child.layer.kind === constants.LayerKind.SMARTOBJECT) {
       const smartObjectID = soIdMap.get(child.id);
@@ -397,11 +402,13 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
       // instance of the same SO encountered in a previous folder or earlier in this folder),
       // skip it — translating any one instance updates all of them simultaneously.
       if (smartObjectID && processedIds.has(smartObjectID)) {
-        console.log(`["${child.layer.name}", "with SmartObjectMoreID: ${smartObjectID}" is instance and is skipped`);
+        // DELETE LATER
+        // console.log(`["${child.layer.name}", "with SmartObjectMoreID: ${smartObjectID}" is instance and is skipped`);
         continue;
       }
 
-      console.log(`[${matchType}] "${child.layer.name}" → "${text}"`);
+      // DELETE LATER
+      // console.log(`[${matchType}] "${child.layer.name}" → "${text}"`);
       await ps.translateSmartObject(child.layer, text);
       processedIds.add(await ps.getSOid(child.layer)); // Mark this SO as processed to prevent duplicate translations of its instances
 
