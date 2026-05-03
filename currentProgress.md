@@ -100,6 +100,62 @@ This prevents the failed batchPlay call entirely. The layer is silently skipped 
 
 ---
 
+## Wrong words assigned to layers — the `parseRawPhrase` split bug ⚠️ UNDER INVESTIGATION
+
+**Symptom:** A banner that should read `X2 / CHANCE / AUF DEN BONUS / AKTIV` (4 visual lines) instead renders as `X2 / CHANCE / AUF / DEN` — only 4 of 6 translated words appear, and they're wrong because the 3-word phrase `AUF DEN BONUS` has been torn apart and individual words assigned to individual SOs.
+
+**Banner layer structure:** `[x2, FOR BONUS, CHANCE, ACTIVE, ON, Base]` — 6 layers total.
+
+**Visual evidence:**
+- Layer `FOR BONUS` (one SO, one line in Excel) → gets assigned only `"AUF"` instead of `"AUF DEN BONUS"`
+- Layer `CHANCE` → gets `"AUF"`, layer `base` → gets `"BONUS"` etc.
+
+**Root cause — two compounding issues:**
+
+**Issue A: `parseRawPhrase("linesArray")` splits by spaces, not just newlines**
+
+```js
+if (mode === "linesArray") return lines.flatMap(l => l.split(/\s+/)).filter(Boolean);
+```
+
+EN phrase `"(X2)\nCHANCE\nFOR BONUS\nACTIVE"` → after newline split gives lines `["X2","CHANCE","FOR BONUS","ACTIVE"]`. Then `.flatMap(l => l.split(/\s+/))` **splits each line by spaces too**, giving:
+
+```
+enLines:   ["X2", "CHANCE", "FOR", "BONUS", "ACTIVE"]   ← 5 items
+```
+
+But the folder only has 3 relevant SOs (`x2`, `CHANCE`, `FOR BONUS`). `"FOR BONUS"` is one semantic unit — one line in Excel, one SO — but it's been split into two tokens. The layer name `"FOR BONUS"` fuzzy-matches `"FOR"` → gets assigned only `"AUF"`.
+
+**Issue B: `phraseGuesser` flattens the translated phrase before returning it**
+
+`guessThePhrase` calls `parseRawPhrase(langEntries[bestIndex], "strict")` which joins all translated lines with spaces:
+
+```
+Excel DE cell: "X2\nCHANCE\nAUF DEN BONUS\nAKTIV"
+  → parseRawPhrase("strict") → "X2 CHANCE AUF DEN BONUS AKTIV"   ← flat string
+```
+
+Then `processMatchedFolder` calls `parseRawPhrase(transPhrase, "linesArray")` on that flat string, splitting by spaces again:
+
+```
+transLines: ["X2", "CHANCE", "AUF", "DEN", "BONUS", "AKTIV"]   ← 6 items
+```
+
+Now `matchLayersToLines` is trying to match 3 SOs to 6 single-word tokens — the 1:1 assumption is broken.
+
+**The core mismatch:**
+The Excel row has newline-delimited structure that maps 1 line → 1 SO. But both EN and DE phrases lose that structure before reaching `matchLayersToLines`, which then works on flat word arrays with no concept of "this phrase has multi-word tokens."
+
+**Fix needed:**
+1. `parseRawPhrase("linesArray")` should split by **newlines only**, not spaces — preserving `"FOR BONUS"` as one token.
+2. `parseRawPhrase("strict")` (used to return `translatedPhrase` from `guessThePhrase`) should preserve newlines, returning a raw newline-delimited string — not flatten to a space-joined string.
+3. `processMatchedFolder` then calls `parseRawPhrase(transPhrase, "linesArray")` on that newline-preserved string and gets the correct per-line tokens.
+
+**Open question before applying the fix:**
+Does the Excel DE column for this phrase actually contain newlines (`\n`), or is the whole translation on one line with spaces? If it's all on one line, the newline-split approach won't help and a different strategy is needed.
+
+---
+
 ## Key concepts
 
 ### SmartObjectMoreID (`smartObjectMore.ID`)

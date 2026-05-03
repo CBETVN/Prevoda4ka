@@ -301,6 +301,8 @@ function charOverlapRatio(a, b) {
   return matched / Math.max(a.length, b.length);
 }
 
+
+
 function layerNameMatchesEnVocab(layerName, allEnglishWords, threshold = 0.8) {
   const nameStr = normalizeForMatch(layerName).replace(/\s/g, "");
   if (!nameStr) return false;
@@ -391,7 +393,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
     if (assignment === null) continue;
 
     const { text, matchType } = assignment;
-    const child = childLayers.find(c => c.id === layerId);
+    const child = childLayers.find(child => child.id === layerId);
     if (!child) { /* DELETE LATER: console.warn(`[processMatchedFolder] STEP 8: no child found for layerId ${layerId}`) */ continue; }
     if (!child.layer.visible) { /* DELETE LATER: console.log(`[processMatchedFolder] STEP 8: skipping invisible layer "${child.layer.name}"`) */ continue; }
 
