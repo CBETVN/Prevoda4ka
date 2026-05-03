@@ -17,7 +17,7 @@
 // add them here — this is the only place that decides what gets translated.
 
 import { photoshop } from "../globals.js";
-import { getAllLayers, getSOid } from "./photoshop.js";
+import { getAllVisibleLayers, getSOid } from "./photoshop.js";
 
 const { constants } = photoshop;
 
@@ -72,11 +72,10 @@ export async function getTranslatableLayers(folderLayer, enPhrase) {
       )
     : null;
 
-  const candidates = getAllLayers(folderLayer.layers).filter(
+  const candidates = getAllVisibleLayers(folderLayer.layers).filter(
     layer =>
-      layer.visible &&
-      (layer.kind === constants.LayerKind.SMARTOBJECT ||
-        layer.kind === constants.LayerKind.TEXT)
+      layer.kind === constants.LayerKind.SMARTOBJECT ||
+      layer.kind === constants.LayerKind.TEXT
   );
 
   // Single pass: deduplicate SOs and build soIdMap simultaneously.
