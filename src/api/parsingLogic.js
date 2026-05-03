@@ -8,6 +8,7 @@ import * as ps from "./photoshop.js"; // Import all Photoshop API functions as p
 // import {app} from "../globals"; // Import app for showing alerts, etc.
 // Access XLSX from global scope
 import * as phraseGuesser from "./phraseGuesser";
+import { getTranslatableLayers } from "./getTranslatableLayers.js";
 const XLSX = window.XLSX;
 const { core, app, constants } = photoshop;
 const { executeAsModal } = photoshop.core;
@@ -332,40 +333,16 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   const transLines = parseRawPhrase(transPhrase, "linesArray");
   console.log(`${transLines} `);
 
-  // STEP 4: Collect all Smart Object layers inside this folder (recursive).
-  // We need their SmartObjectMoreIDs to detect duplicate instances.
-  // (Text layers and other types are handled later without needing SO IDs.)
-  let childSOLayers = ps.getAllLayers(folderLayer.layers).filter(layer => layer.kind === constants.LayerKind.SMARTOBJECT);
-  // DELETE LATER
-  // console.log(`[processMatchedFolder] STEP 4: found ${childSOLayers.length} SO child layers in "${folderLayer.name}":`, childSOLayers.map(l => l.name));
-  const uniqueChildSOLayers = await ps.purgeSOInstancesFromArray(childSOLayers);
-  childSOLayers = uniqueChildSOLayers;
-  // DELETE LATER
-  // console.log(`[processMatchedFolder] STEP 4: after dedup: ${childSOLayers.length} unique SOs`);
-  
-  // STEP 5: Fetch the full Photoshop descriptor for each child SO in one bulk batchPlay call.
-  // From each descriptor we extract smartObjectMore.ID — the SmartObjectMoreID that is
-  // shared across all instances/copies of the same linked Smart Object.
-  // We store it in soIdMap: layer.id → SmartObjectMoreID, for O(1) lookup during translation.
-  const soIdMap = new Map();
-  for (const layer of childSOLayers) {
-    const smartObjectMoreID = await ps.getSOid(layer);
-    if (smartObjectMoreID) soIdMap.set(layer.id, smartObjectMoreID);
-  }
-
-  // STEP 6: Build a flat list of translatable child layers (Smart Objects and Text only), recursive.
-  // Shape layers, fills, masks and other non-translatable types are excluded here so they
-  // can't inflate resolved.length, corrupt the offset calculation, or cause middle-gap mismatches.
-  const childLayers = ps.getAllLayers(folderLayer.layers)
-    .filter(layer => layer.kind === constants.LayerKind.SMARTOBJECT || layer.kind === constants.LayerKind.TEXT)
-    .map((layer, i) => ({
-      id:         layer.id,
-      name:       layer.name,
-      stackIndex: i,
-      layer,
-    }));
-  // DELETE LATER
-  // console.log(`[processMatchedFolder] STEP 6: ${childLayers.length} translatable child layers:`, childLayers.map(l => `${l.name}(${l.layer.kind})`));
+  // STEP 4-6: Get translatable child layers and soIdMap from single-source-of-truth API.
+  // Handles recursive flatten, kind filter (SO + TEXT only), visibility filter, and SO dedup.
+  // soIdMap (layer.id → SmartObjectMoreID) is built for free during the dedup pass.
+  const { layers: translatableLayers, soIdMap } = await getTranslatableLayers(folderLayer);
+  const childLayers = translatableLayers.map((layer, i) => ({
+    id:         layer.id,
+    name:       layer.name,
+    stackIndex: i,
+    layer,
+  }));
 
   // STEP 7: Match each child layer to a translated line.
   // Uses a confidence ladder: exact name match → fuzzy name match → stack index fallback.
@@ -394,8 +371,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
 
     const { text, matchType } = assignment;
     const child = childLayers.find(child => child.id === layerId);
-    if (!child) { /* DELETE LATER: console.warn(`[processMatchedFolder] STEP 8: no child found for layerId ${layerId}`) */ continue; }
-    if (!child.layer.visible) { /* DELETE LATER: console.log(`[processMatchedFolder] STEP 8: skipping invisible layer "${child.layer.name}"`) */ continue; }
+    if (!child) continue;
 
     if (child.layer.kind === constants.LayerKind.SMARTOBJECT) {
       const smartObjectID = soIdMap.get(child.id);
