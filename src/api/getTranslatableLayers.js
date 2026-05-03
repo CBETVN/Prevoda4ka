@@ -100,7 +100,9 @@ export async function getTranslatableLayers(folderLayer, enPhrase) {
     if (enPhraseLines) {
       const layerNameUpper = layer.name.trim().toUpperCase();
       const matchesPhrase = [...enPhraseLines].some(
-        line => line === layerNameUpper || line.split(/\s+/).includes(layerNameUpper)
+        line => layerNameUpper === line ||
+                layerNameUpper.startsWith(line) ||
+                line.split(/\s+/).includes(layerNameUpper)
       );
       if (!matchesPhrase) continue;
     }

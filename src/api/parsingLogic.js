@@ -683,7 +683,7 @@ function matchLayersToLines(childLayers, enLines, transLines) {
   // --- TEST ONLY: hardcoded skip list — layers whose name matches are left untouched ---
   const doNotTranslate = new Set(["SUPER", "X2",]);
 
-  resolved.forEach(({ layer, matchType, enIndex }) => {
+  resolved.forEach(({ layer, matchType, enIndex }, resolvedIndex) => {
 
     // TEST: skip layers in the doNotTranslate list — leave untouched, but advance the
     // position counter so subsequent layers don't get shifted into the wrong trans slot.
@@ -707,7 +707,17 @@ function matchLayersToLines(childLayers, enLines, transLines) {
       // Case A — translator expanded the phrase into more lines than EN has.
       // Last unique EN line absorbs all remaining trans lines joined with a space.
       // e.g. EN: ["YOU WIN"] / BG: ["ти", "вече", "спечели"] → "ти вече спечели"
-      const isLast = uniquePosition === uniqueEnLinesCount - 1;
+      //
+      // isLastLayer: also treat this layer as "last" when it's the final layer in resolved,
+      // even if uniquePosition hasn't reached uniqueEnLinesCount - 1.
+      // Handles folders where one multi-word SO (e.g. "BUY BONUS") fuzzy-matches the first
+      // EN line but is actually the only translatable layer — without this it would only get
+      // transLines[0] and the remaining trans words would be orphaned.
+      // e.g. EN: ["BUY", "BONUS"] / DE: ["BONUS", "KAUFEN"] / layer: "BUY BONUS"
+      //   Without fix: "BUY BONUS" → "BONUS" (only first trans line)
+      //   With fix:    "BUY BONUS" → "BONUS KAUFEN" (all remaining trans lines joined)
+      const isLastLayer = resolvedIndex === resolved.length - 1;
+      const isLast = uniquePosition === uniqueEnLinesCount - 1 || isLastLayer;
       const text = isLast ? transLines.slice(uniquePosition).join(" ") : transLines[uniquePosition];
       result.set(layer.id, { text, matchType, enIndex });
     } else {
