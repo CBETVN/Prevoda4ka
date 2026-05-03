@@ -305,12 +305,22 @@ function charOverlapRatio(a, b) {
 
 
 function layerNameMatchesEnVocab(layerName, allEnglishWords, threshold = 0.8) {
-  const nameStr = normalizeForMatch(layerName).replace(/\s/g, "");
-  if (!nameStr) return false;
-  for (const word of allEnglishWords) {  // allEnglishWords is the Set of individual words
-    if (charOverlapRatio(nameStr, word) >= threshold) return true;
-  }
-  return false;
+  // Split the layer name into individual words after normalizing.
+  // e.g. "FOR BONUS" → ["FOR", "BONUS"]
+  // We check each word separately — joining them into "FORBONUS" before matching
+  // would make both words unrecognizable against the single-word vocab entries.
+  const words = normalizeForMatch(layerName).split(" ").filter(Boolean);
+  if (!words.length) return false;
+
+  // Every word in the layer name must match at least one EN vocab word.
+  // This catches multi-word names like "FOR BONUS" (both words are in vocab)
+  // while still rejecting names like "Base" (no vocab word scores >= threshold).
+  return words.every(w => {
+    for (const vocabWord of allEnglishWords) {
+      if (charOverlapRatio(w, vocabWord) >= threshold) return true;
+    }
+    return false;
+  });
 }
 
 
@@ -333,10 +343,10 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   const transLines = parseRawPhrase(transPhrase, "linesArray");
   console.log(`${transLines} `);
 
-  // STEP 4-6: Get translatable child layers and soIdMap from single-source-of-truth API.
+  // STEP 4: Get translatable child layers and soIdMap from single-source-of-truth API.
   // Handles recursive flatten, kind filter (SO + TEXT only), visibility filter, and SO dedup.
   // soIdMap (layer.id → SmartObjectMoreID) is built for free during the dedup pass.
-  const { layers: translatableLayers, soIdMap } = await getTranslatableLayers(folderLayer);
+  const { layers: translatableLayers, soIdMap } = await getTranslatableLayers(folderLayer, matchedPhrase);
   const childLayers = translatableLayers.map((layer, i) => ({
     id:         layer.id,
     name:       layer.name,
@@ -344,7 +354,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
     layer,
   }));
 
-  // STEP 7: Match each child layer to a translated line.
+  // STEP 5: Match each child layer to a translated line.
   // Uses a confidence ladder: exact name match → fuzzy name match → stack index fallback.
   // Returns a Map<layerId, { text, matchType } | null>
   // null means the layer was in a "middle gap" and should be left untouched.
@@ -363,7 +373,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
     return;
   }
 
-  // STEP 8: Apply translations.
+  // STEP 6: Apply translations.
   // Loop over the match result and translate each assigned layer.
   for (const [layerId, assignment] of result) {
     // null assignment = middle-gap layer, intentionally left untouched

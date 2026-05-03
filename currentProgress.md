@@ -169,3 +169,25 @@ Maps `layer.id → smartObjectMore.ID` for child SOs within a single folder. Bui
 
 ### `matchLayersToLines`
 Matches child layers to translated lines using: exact name → fuzzy name → stack index fallback. Returns a confidence score. If confidence < 0.5, the whole folder is skipped. Uses tail-anchoring when EN has more lines than the translation.
+
+---
+
+## `processMatchedFolder` called multiple times for the same folder ⚠️ TODO
+
+**Problem:** `translateAll` loops over `smartObjectsForProcessing` — one entry per unique SO. Multiple SOs can share the same container folder (e.g. `x2`, `CHANCE`, `FOR BONUS`, `ACTIVE`, `ON` all live inside `"ON\nACTIVE\nCHANCE\nFOR BONUS\nx2"`). For each of those 5 SOs, `guessThePhrase` returns the same container → `processMatchedFolder` is called 5 times on the same folder.
+
+`processedIds` prevents double-translating individual SOs within repeat calls, but `getTranslatableLayers` and `matchLayersToLines` still run redundantly on every repeat call, and the repeat calls produce noisy logs.
+
+**Proposed fix:** Pass `processedIds` into `getTranslatableLayers` so it acts as the single gate. When all SOs in a folder are already in `processedIds`, `getTranslatableLayers` returns 0 layers → `processMatchedFolder` returns early after the first real call.
+
+**Signature change:**
+```js
+export async function getTranslatableLayers(folderLayer, processedIds, appState)
+```
+
+Inside the SO dedup loop, add:
+```js
+if (processedIds && processedIds.has(soId)) continue; // already translated in a prior folder call
+```
+
+This makes `getTranslatableLayers` the single source of truth for ALL dedup — within-folder, cross-folder, and repeat-folder — and eliminates the redundant processing entirely.
