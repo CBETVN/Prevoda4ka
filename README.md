@@ -168,34 +168,49 @@ KAUFEN",...
 
 ## PSD File Conventions
 
-### Clean Convention
-- **Parent group name = translation key** (e.g. group named `FREE SPINS` contains SOs `FREE` and `SPINS`, or direct text layers)
-- Group name matches EN lookup table entries almost exactly
-- Individual SO and text layer names are word fragments for layout/animation, not keys
-- Translated versions (BG layer group) have SOs renamed / text layers updated to the translated word (Cyrillic)
-- Some SOs or text layers are tagged `(DO NOT TRANSLATE)` in their name — must be skipped
+The plugin uses a single unified traversal strategy regardless of how the PSD is structured — it doesn't branch on "clean" vs "sloppy" naming. Understanding what it expects helps explain both what works and what can break.
 
-### Sloppy Convention
-- SO and text layer names are meaningless (`enRed`, `bgBlue`, `free copy`, ` FREE SPINS` with leading space)
-- **Parent group names are still descriptive** (`outroCreditsWonLandscape Rome`, `freeSpinsCounterAttila`)
-- The group name contains the meaning but has extra words (scene context, character name)
-- Requires fuzzy normalization to extract the actual translation key from the group name
+### How the Algorithm Traverses the Document
 
-### Convention Variant — "Clean with noise"
-This is a middle ground observed in practice and represents the most common real-world case. The core rule still holds: **the parent group name is the translation key**, and the layers inside are messy. However several complications arise:
+1. **All visible SO layers** are collected from the document root (invisible layers skipped).
+2. For each SO, `phraseGuesser` **walks up the layer hierarchy** collecting SO/text leaf names at each ancestor level, scoring the compound against all EN phrases.
+3. It stops climbing when an **unexplained word** appears in the compound (a sibling phrase's SO leaked in) or the score drops below 0.5 — the last good ancestor becomes the **phrase container**.
+4. Once the container is identified, `getTranslatableLayers` flattens it recursively and keeps only SO + TEXT layers whose names appear as lines in the matched EN phrase.
+5. `matchLayersToLines` assigns translated lines to those layers sequentially.
 
-- **Double SO instances**: each phrase group typically contains two SOs pointing to the same underlying Smart Object (e.g. one inside a `Group 3` subgroup, one sitting directly in the parent named `"X copy"`). They share the same `smartObjectMore.ID`. The plugin must **deduplicate by SO ID** and translate only once. Text layers do not have this problem — each is a unique layer.
-- **Intermediate wrapper groups**: SOs and text layers are often nested inside unnamed intermediate groups (`Group 3`, `Surface`, `txt only`, etc.) before reaching the translatable layer. Traversal must go deep enough to find the actual SO or text layer.
-- **Language group naming variants**: instead of plain `EN` / `BG`, groups may be named `EN_popup` / `BG_popup`. Matching must use `startsWith("EN")` or `includes("EN")` rather than an exact string check.
-- **Phrase concatenation in group names**: a group may be named `congratulations you win` — a combined name covering two separate phrases inside it. The plugin should not try to match this combined name directly but instead descend and match subgroups (`you win`, `congratulations`).
-- **Direct ungrouped SOs/text layers**: some translatable layers (e.g. `"10 free spins for"`, `"of"`) sit directly inside the EN/BG group with no phrase subgroup wrapping them. Their own layer name is the lookup key, not a parent group.
-- **Plain TEXT layers mixed in**: some scenes use direct text layers (not SOs) for translation (e.g. infobar `gameBet` section). These have `layer.kind === "text"` and `layer.textInfo.text` contains the current content. They are translated directly without entering edit mode.
-- **PascalCase group names**: some groups use `CreditsWon` instead of `credits won` — normalization must handle both spaced-lowercase and PascalCase forms when matching against the EN lookup table.
+### Naming — What Matters and What Doesn't
+
+- **SO and text layer names are the primary match signal.** The compound of their names (e.g. `"CHANCE\nFOR BONUS\nX2"`) is what scores against the EN phrase table — not the folder/group names.
+- **Folder/group names are transparent.** CamelCase scene-container names (`doubleChanceOffLandscape`, `buyBonusBtnActive1Portrait`) are never collected during vocabulary gathering. They do not interfere.
+- **"Copy N" suffixes** on SO names are stripped before matching (`"Free copy 3"` → `"Free"`).
+- **Short / noise layer names** that have zero word overlap with any EN phrase (e.g. `"Base"`, `"off"`) are filtered out before the compound is built.
+- **Ancestor folder names** between the layer and its container are also added as individual scoring candidates. ⚠️ Known issue: a folder named `"buyBonusBtnActive1Portrait - EXPORT 50%"` can outcompete the correct compound when it has overlapping words.
+
+### Transparent / Noise Folder Names
+
+The following are always treated as transparent hierarchy levels and ignored when building name candidates:
+- **Language code groups**: `EN`, `DE`, `HR`, `BG`, and all other supported language codes
+- **Generic wrapper groups**: `Group 1`, `Group 2`, etc. (matches `/^group\s+\d+$/i`)
+- **`SLICES`, `BACKGROUND`, `BG`**
+
+Language group naming variants (`EN_popup`, `BG_mobile`) pass through the noise filter (they don't match exact codes) and are simply never collected as SO/text leaf names, so they don't interfere.
 
 ### Target Layer Types
-The plugin must handle **both**:
-- **Smart Objects** — text is inside a nested document; requires entering edit mode to translate
-- **Plain text layers** — `layer.kind === "text"`; translated directly via `layer.textItem.contents` without entering any edit mode
+
+The plugin handles **both**:
+- **Smart Objects** (`layer.kind === SMARTOBJECT`) — translated by entering edit mode, finding text layers inside, setting `textItem.contents`
+- **Plain text layers** (`layer.kind === TEXT`) — translated directly via `layer.textItem.contents` without entering edit mode
+
+All other layer types (shapes, fill layers, adjustment layers, masks) are excluded at the `getTranslatableLayers` stage.
+
+### Structural Gotchas from Real PSDs
+
+- **Double SO instances**: the same linked SO often appears twice in a folder (one directly, one inside a sub-group). They share `smartObjectMore.ID`. `purgeSOInstancesFromArray` deduplicates before the loop; `processedIds` prevents re-translation when the same container is matched again from a sibling SO.
+- **Intermediate wrapper groups**: SO/text layers are commonly nested under unnamed sub-groups (`Group 3`, `Surface`, `txt only`). `_collectVocabNames` recurses through these transparently.
+- **Partial translations**: many EN phrases have empty cells for some languages. `parseExcelFile` stores `""` — `phraseGuesser` rejects empty translated phrases and leaves the layer untouched.
+- **`(do not translate!)` markers**: some EN lines are annotated with `()` markers (e.g. `SUPER (do not translate!)`). The plugin currently skips a hardcoded test set `["SUPER", "X2"]` — this must be replaced with marker-based logic reading from the Excel phrase. ⚠️ WIP.
+- **Locked layers**: `translateSmartObject` checks for locked state before entering edit mode and skips silently.
+- **Invisible layers**: excluded at collection time — if a language group (e.g. the `BG` group) is hidden, it is skipped entirely.
 
 ### Matching Strategy (current implementation)
 
