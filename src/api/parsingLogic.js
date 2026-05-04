@@ -554,12 +554,6 @@ function matchLayersToLines(childLayers, enLines, transLines) {
     };
   }
 
-  // Branch based on unique EN line count vs translated line count.
-  // Using enLines.length (not resolved.length) so word-in-line duplicates don't skew the offset.
-  // e.g. EN: 3 lines, trans: 3 lines → direct 1:1 even if 4 layers exist (one is a duplicate word)
-  const uniqueEnLinesCount = enLines.length;
-  const offset = uniqueEnLinesCount - transLines.length;
-
   // Track which EN line indices have already been assigned a translation.
   // When multiple PSD layers match the same EN line ("FREE" and "SPINS" both → "FREE SPINS"),
   // only the first gets the translation — the rest are left untouched (null).
@@ -588,37 +582,16 @@ function matchLayersToLines(childLayers, enLines, transLines) {
     // 0-based position of this EN line among the unique ones assigned so far
     const uniquePosition = assignedEnIndices.size;
 
-    if (uniqueEnLinesCount <= transLines.length) {
-      // Case A — translator expanded the phrase into more lines than EN has.
-      // Last unique EN line absorbs all remaining trans lines joined with a space.
-      // e.g. EN: ["YOU WIN"] / BG: ["ти", "вече", "спечели"] → "ти вече спечели"
-      //
-      // isLastLayer: also treat this layer as "last" when it's the final layer in resolved,
-      // even if uniquePosition hasn't reached uniqueEnLinesCount - 1.
-      // Handles folders where one multi-word SO (e.g. "BUY BONUS") fuzzy-matches the first
-      // EN line but is actually the only translatable layer — without this it would only get
-      // transLines[0] and the remaining trans words would be orphaned.
-      // e.g. EN: ["BUY", "BONUS"] / DE: ["BONUS", "KAUFEN"] / layer: "BUY BONUS"
-      //   Without fix: "BUY BONUS" → "BONUS" (only first trans line)
-      //   With fix:    "BUY BONUS" → "BONUS KAUFEN" (all remaining trans lines joined)
+    // Sequential — no forced gaps.
+    // Last assigned layer absorbs remaining trans lines (translator expanded).
+    // Layers beyond the last trans slot get null (translator contracted).
+    if (uniquePosition >= transLines.length) {
+      result.set(layer.id, null);
+    } else {
       const isLastLayer = resolvedIndex === resolved.length - 1;
-      const isLast = uniquePosition === uniqueEnLinesCount - 1 || isLastLayer;
+      const isLast = uniquePosition === transLines.length - 1 || isLastLayer;
       const text = isLast ? transLines.slice(uniquePosition).join(" ") : transLines[uniquePosition];
       result.set(layer.id, { text, matchType, enIndex });
-    } else {
-      // Case B — EN has more lines than trans, true tail-anchoring.
-      // First maps to first, last maps to last, middle gap is untouched.
-      // e.g. EN: ["TOTAL", "CREDITS", "WON"] / DE: ["GESAMTGUTHABEN", "GEWONNEN"]
-      //   TOTAL   → "GESAMTGUTHABEN"
-      //   CREDITS → null (middle gap, untouched)
-      //   WON     → "GEWONNEN"
-      if (uniquePosition === 0) {
-        result.set(layer.id, { text: transLines[0], matchType, enIndex });
-      } else if (uniquePosition <= offset) {
-        result.set(layer.id, null); // middle gap, untouched
-      } else {
-        result.set(layer.id, { text: transLines[uniquePosition - offset], matchType, enIndex });
-      }
     }
 
     assignedEnIndices.add(enIndex);
