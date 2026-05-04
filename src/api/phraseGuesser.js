@@ -1,6 +1,6 @@
 import { photoshop } from "../globals";
 import { parseRawPhrase } from "./parsingLogic";
-const { constants } = photoshop;
+const { app, constants } = photoshop;
 
 /**
  * Attempts to guess which XLSX phrase a layer belongs to when it doesn't live
@@ -64,7 +64,9 @@ export function guessThePhrase(layer, appState) {
 
   const translatedPhrase = parseRawPhrase(langEntries[bestIndex], "raw");
   if (!translatedPhrase) {
-    console.warn(`[guessThePhrase] "${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translatedPhrase is empty after parseRawPhrase("strict")`);
+    app.showAlert(`"${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translation is missing from the Excel file`);
+    // console.log(`[guessThePhrase] "${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translatedPhrase is empty after parseRawPhrase("strict")`);
+
     return null;
   }
 
