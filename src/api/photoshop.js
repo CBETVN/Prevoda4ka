@@ -28,79 +28,83 @@ export const getProjectInfo = async () => {
 
 
 export async function translateSmartObject(smartObject, translation) {
+  // Cache the layer ID — the smartObject reference can go stale once we enter the modal
   const smartObjectId = smartObject.id;
 
   try {
     await executeAsModal(async () => {
+
+      // --- STEP 1: Select the target layer in the main document ---
+      // Required so Photoshop knows which layer "Edit Contents" applies to
       await batchPlay([{
         _obj: "select",
         _target: [{ _ref: "layer", _id: smartObjectId }],
         _options: { dialogOptions: "silent" }
       }], { synchronousExecution: true });
-      // DELETE LATER
-      // console.log("Selected Smart Object layer:", smartObject.name, "(ID:", smartObjectId, ")");
+
+      // --- STEP 2: Re-fetch a live layer reference ---
+      // Layer objects obtained before the modal can go stale; get a fresh one from the live doc
       const allDocLayers = getAllLayers(app.activeDocument.layers);
       const freshSmartObject = allDocLayers.find(l => l.id === smartObjectId);
 
+      // --- GUARD: layer disappeared (e.g. deleted between call and modal entry) ---
       if (!freshSmartObject) {
         console.error("Could not find smart object with id:", smartObjectId);
         return;
       }
 
+      // --- GUARD: locked layer ---
+      // Known Photoshop behavior: editing a locked SO triggers "command unavailable".
+      // Skip early to keep the run stable and avoid modal failure.
       if (freshSmartObject.locked) {
-        // Known Photoshop behavior: editing a locked SO triggers "command unavailable".
-        // Skip early to keep the run stable and avoid modal failure.
         console.warn(`Smart Object "${freshSmartObject.name}" is locked. Cannot edit contents. Skipping translation.`);
         return;
       }
 
-      // DELETE LATER
-      // console.log(`[translateSmartObject] About to open SO "${freshSmartObject.name}" | kind: ${freshSmartObject.kind} | locked: ${freshSmartObject.locked} | visible: ${freshSmartObject.visible}`);
-      // let anc = freshSmartObject.parent;
-      // while (anc && anc.layers) {
-      //   console.log(`  ancestor: "${anc.name}" locked: ${anc.locked} visible: ${anc.visible}`);
-      //   anc = anc.parent;
-      // }
-      // console.log(`  active doc BEFORE editSmartObject: "${app.activeDocument.name}" id: ${app.activeDocument.id}`);
+      // --- STEP 3: Open the Smart Object for editing ---
+      // Switches the active document to the SO's internal PSB
       const mainDocId = app.activeDocument.id;
       await editSmartObject(freshSmartObject);
-      // DELETE LATER
-      // console.log(`  active doc AFTER  editSmartObject: "${app.activeDocument.name}" id: ${app.activeDocument.id}`);
 
-      // Guard: if editSmartObject failed (e.g. "Edit Contents not available"), the active
-      // document is still the main PSD. Bail out immediately — do NOT close it.
+      // --- GUARD: editSmartObject silently failed ---
+      // If the active document is still the main PSD, the SO did not open (e.g. "Edit Contents
+      // not available"). Bail out immediately — do NOT close the main document.
       if (app.activeDocument.id === mainDocId) {
-        // DELETE LATER
-        // console.warn(`[translateSmartObject] FAILED to open SO "${freshSmartObject.name}" — doc did not change, still on "${app.activeDocument.name}"`);
         return;
       }
-      // DELETE LATER
-      // console.log(`[translateSmartObject] Successfully opened SO "${freshSmartObject.name}" as "${app.activeDocument.name}"`);
 
-      // Fetch all inner layers and their info in one shot AFTER opening the SO
+      // --- STEP 4: Enumerate all layers inside the SO document ---
       const allLayers = getAllLayers(app.activeDocument.layers);
+
+      // --- GUARD: no text layers inside the SO — nothing to translate ---
       const isThereTextLayer = allLayers.some(l => l.kind === "text");
       if (!isThereTextLayer) {
-        // DELETE LATER
-        // console.warn(`[translateSmartObject] No text layers inside "${freshSmartObject.name}" — closing without save`);
         app.activeDocument.closeWithoutSaving();
         return;
       }
+
+      // --- STEP 5: Fetch all layer descriptors in one batchPlay call ---
+      // Needed to read impliedFontSize before the text content is changed (Photoshop resets it)
       const allInnerInfos = await batchPlay(
         allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
         { synchronousExecution: true }
       );
 
-      // Translate all text layers, reusing allInnerInfos for font size
+      // --- STEP 6: Translate each visible text layer, then restore its original font size ---
+      // Setting textItem.contents causes Photoshop to reset the font size to the document
+      // default, so we immediately re-apply the original size via batchPlay after each write.
       for (let i = 0; i < allLayers.length; i++) {
         const layer = allLayers[i];
         if (layer.kind !== "text" || !layer.visible) continue;
 
+        // Read original size before the write (allInnerInfos was captured above for this reason)
         const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
 
+        // Write the translation
         layer.textItem.contents = translation;
         app.activeDocument.activeLayers = [layer];
 
+        // Re-apply the original font size — Photoshop resets it when contents change
         await batchPlay([{
           _obj: "set",
           _target: [
@@ -117,8 +121,12 @@ export async function translateSmartObject(smartObject, translation) {
         }], { synchronousExecution: true });
       }
 
+      // --- STEP 7: Crop the SO canvas to fit the translated text layer bounds ---
       await cropCanvasToLayerBounds(allLayers, allInnerInfos);
 
+      // --- STEP 8: Save and close the SO document ---
+      // save() commits the changes back to the linked SO in the main PSD;
+      // closeWithoutSaving() then closes the temporary SO document without a second dialog.
       await app.activeDocument.save();
       app.activeDocument.closeWithoutSaving();
 
