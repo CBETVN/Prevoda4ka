@@ -6,6 +6,12 @@ const { batchPlay } = action;
 const { app } = photoshop;
 const { executeAsModal } = photoshop.core;
 
+// ── FEATURE FLAG ──────────────────────────────────────────────
+// When true, translateSmartObject delegates to the recursive variant
+// that enters nested SOs looking for text layers.
+// Flip to false to restore the previous flat behavior exactly.
+const RECURSIVE_SO = true;
+
 
 
 export const notify = async (message) => {
@@ -28,6 +34,8 @@ export const getProjectInfo = async () => {
 
 
 export async function translateSmartObject(smartObject, translation) {
+  if (RECURSIVE_SO) return await translateSmartObjectRecursive(smartObject, translation);
+
   // Cache the layer ID — the smartObject reference can go stale once we enter the modal
   const smartObjectId = smartObject.id;
 
@@ -331,6 +339,145 @@ export async function purgeSOInstancesFromArray(array) {
   return uniqueLayers;
 }
 
+
+
+
+
+//////////////// TEST FUNCTION ////////////
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RECURSIVE SO TRANSLATION (gated by RECURSIVE_SO flag)
+// Delete this entire section to revert — no other code references these functions
+// except the one-line redirect at the top of translateSmartObject.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Recursive wrapper — same signature as translateSmartObject.
+ * Called only when RECURSIVE_SO === true.
+ */
+async function translateSmartObjectRecursive(smartObject, translation) {
+  const smartObjectId = smartObject.id;
+
+  try {
+    await executeAsModal(async () => {
+      // Select the target layer in the main document
+      await batchPlay([{
+        _obj: "select",
+        _target: [{ _ref: "layer", _id: smartObjectId }],
+        _options: { dialogOptions: "silent" }
+      }], { synchronousExecution: true });
+
+      // Re-fetch a live layer reference (stale after modal entry)
+      const allDocLayers = getAllLayers(app.activeDocument.layers);
+      const freshSmartObject = allDocLayers.find(l => l.id === smartObjectId);
+
+      if (!freshSmartObject) {
+        console.error("[recursive] Could not find smart object with id:", smartObjectId);
+        return;
+      }
+
+      if (freshSmartObject.locked) {
+        console.warn(`[recursive] Smart Object "${freshSmartObject.name}" is locked. Skipping.`);
+        return;
+      }
+
+      const mainDocId = app.activeDocument.id;
+      await editSmartObject(freshSmartObject);
+
+      // Guard: SO failed to open
+      if (app.activeDocument.id === mainDocId) return;
+
+      await _translateSOContentsRecursive(translation, true);
+
+    }, { commandName: "Translate Smart Object (Recursive)" });
+
+  } catch (e) {
+    console.error("[recursive] Error in executeAsModal:", e);
+  }
+}
+
+
+/**
+ * Inner recursive logic — called after an SO document is already open.
+ * Translates text layers, then recurses into any nested SOs.
+ *
+ * @param {string} translation - Text to apply to all text layers found
+ * @param {boolean} isTopLevel - If true, runs cropCanvasToLayerBounds before save
+ */
+async function _translateSOContentsRecursive(translation, isTopLevel) {
+  const allLayers = getAllLayers(app.activeDocument.layers);
+  const textLayers = allLayers.filter(l => l.kind === "text" && l.visible);
+  const nestedSOs = allLayers.filter(l => l.kind === "smartObject" && l.visible && !l.locked);
+
+  // ── TRANSLATE TEXT LAYERS ────────────────────────────────────
+  let allInnerInfos = null;
+  if (textLayers.length > 0) {
+    allInnerInfos = await batchPlay(
+      allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
+      { synchronousExecution: true }
+    );
+
+    for (let i = 0; i < allLayers.length; i++) {
+      const layer = allLayers[i];
+      if (layer.kind !== "text" || !layer.visible) continue;
+
+      const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
+      layer.textItem.contents = translation;
+      app.activeDocument.activeLayers = [layer];
+
+      await batchPlay([{
+        _obj: "set",
+        _target: [
+          { _ref: "property", _property: "textStyle" },
+          { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+        ],
+        to: {
+          _obj: "textStyle",
+          textOverrideFeatureName: 808465458,
+          typeStyleOperationType: 3,
+          size: { _unit: "pointsUnit", _value: originalSize }
+        },
+        _options: { dialogOptions: "dontDisplay" }
+      }], { synchronousExecution: true });
+    }
+  }
+
+  // ── RECURSE INTO NESTED SOs ─────────────────────────────────
+  let didRecurse = false;
+  const uniqueNestedSOs = await purgeSOInstancesFromArray(nestedSOs);
+
+  for (const nestedSO of uniqueNestedSOs) {
+    const parentDocId = app.activeDocument.id;
+    await editSmartObject(nestedSO);
+
+    // Guard: SO failed to open
+    if (app.activeDocument.id === parentDocId) continue;
+
+    await _translateSOContentsRecursive(translation, false);
+    didRecurse = true;
+  }
+
+  // ── NOTHING HAPPENED — bail without saving ──────────────────
+  if (textLayers.length === 0 && !didRecurse) {
+    app.activeDocument.closeWithoutSaving();
+    return;
+  }
+
+  // ── CROP (top level only), SAVE, CLOSE ──────────────────────
+  if (isTopLevel) {
+    if (!allInnerInfos) {
+      allInnerInfos = await batchPlay(
+        allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
+        { synchronousExecution: true }
+      );
+    }
+    await cropCanvasToLayerBounds(allLayers, allInnerInfos);
+  }
+
+  await app.activeDocument.save();
+  app.activeDocument.closeWithoutSaving();
+}
 
 
 
