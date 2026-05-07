@@ -131,9 +131,10 @@ export async function translateSmartObject(smartObject, translation) {
         // Read original size before the write (allInnerInfos was captured above for this reason)
         const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
 
+
         // If the font is missing, swap it to the fallback BEFORE writing new text.
         // This prevents PS from using its own default substitute (usually Myriad Pro).
-        if (REPLACE_MISSING_FONTS) await replaceMissingFont(allInnerInfos[i]);
+        if (REPLACE_MISSING_FONTS ) await replaceMissingFont(allInnerInfos[i]);
 
         // Write the translation
         layer.textItem.contents = translation;
@@ -359,6 +360,38 @@ export async function purgeSOInstancesFromArray(array) {
 
 
 
+
+
+//Detects if a text layer has a missing font. Must be called inside an executeAsModal context
+async function hasMissingFont(layer) {
+  console.log("Selected layer:", layer.name);
+  try {
+    const res = await batchPlay([{ _obj: "get", _target: [{ _ref: "layer", _id: layer.id }] }], { synchronousExecution: true });
+    const layerInfo = res[0];
+    const fontAvailable = layerInfo.textKey.textStyleRange[0].textStyle.fontAvailable;
+    console.log("Has missing fonts:", fontAvailable !== true);
+    return fontAvailable !== true; // true = missing (catches false AND undefined)
+  } catch (error) {
+    console.error("Error retrieving layer info:", error);
+    return false;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //////////////// TEST FUNCTION ////////////
 
 
@@ -456,9 +489,19 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 
       const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
 
+
+
+        const isMissingFont = await hasMissingFont(layer);
+        if (isMissingFont) {
+          console.log(`Layer "${layer.name}" has missing font`);
+        } else {
+          console.log(`Layer "${layer.name}" font is available`);
+        }
+
+
       // If the font is missing, swap it to the fallback BEFORE writing new text.
       // This prevents PS from using its own default substitute (usually Myriad Pro).
-      if (REPLACE_MISSING_FONTS) await replaceMissingFont(allInnerInfos[i]);
+      if (REPLACE_MISSING_FONTS && isMissingFont) await replaceMissingFont(allInnerInfos[i]);
 
       layer.textItem.contents = translation;
       app.activeDocument.activeLayers = [layer];
