@@ -114,47 +114,86 @@ export async function translateSmartObject(smartObject, translation) {
         return;
       }
 
-      // --- STEP 5: Fetch all layer descriptors in one batchPlay call ---
-      // Needed to read impliedFontSize before the text content is changed (Photoshop resets it)
+      // --- STEP 5: Fetch all layer descriptors BEFORE any changes ---
+      // Needed to: (1) detect missing fonts, (2) read original font sizes.
+      const preRemapInfos = await batchPlay(
+        allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
+        { synchronousExecution: true }
+      );
+
+      // --- STEP 5.5: Remap all missing fonts in one document-wide pass ---
+      // Must happen before text writes. See _translateSOContentsRecursive for full explanation.
+      if (REPLACE_MISSING_FONTS) await remapMissingFontsInDocument(preRemapInfos);
+
+      // --- STEP 5.6: Re-fetch descriptors AFTER remap ---
+      // Fresh font names needed for the atomic write path.
       const allInnerInfos = await batchPlay(
         allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
         { synchronousExecution: true }
       );
 
-      // --- STEP 6: Translate each visible text layer, then restore its original font size ---
-      // Setting textItem.contents causes Photoshop to reset the font size to the document
-      // default, so we immediately re-apply the original size via batchPlay after each write.
+      // --- STEP 6: Translate each visible text layer ---
       for (let i = 0; i < allLayers.length; i++) {
         const layer = allLayers[i];
         if (layer.kind !== "text" || !layer.visible) continue;
 
-        // Read original size before the write (allInnerInfos was captured above for this reason)
         const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
 
+        // Check if font was missing BEFORE remap (pre-remap snapshot)
+        const fontWasMissing = REPLACE_MISSING_FONTS && layerHasMissingFont(preRemapInfos[i]);
 
-        // If the font is missing, swap it to the fallback BEFORE writing new text.
-        // This prevents PS from using its own default substitute (usually Myriad Pro).
-        if (REPLACE_MISSING_FONTS ) await replaceMissingFont(allInnerInfos[i]);
-
-        // Write the translation
-        layer.textItem.contents = translation;
         app.activeDocument.activeLayers = [layer];
 
-        // Re-apply the original font size — Photoshop resets it when contents change
-        await batchPlay([{
-          _obj: "set",
-          _target: [
-            { _ref: "property", _property: "textStyle" },
-            { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
-          ],
-          to: {
-            _obj: "textStyle",
-            textOverrideFeatureName: 808465458,
-            typeStyleOperationType: 3,
-            size: { _unit: "pointsUnit", _value: originalSize }
-          },
-          _options: { dialogOptions: "dontDisplay" }
-        }], { synchronousExecution: true });
+        if (fontWasMissing) {
+          // ── ATOMIC WRITE: text + font + size in one batchPlay call ──
+          // textItem.contents permanently destroys remapped fonts, so we bypass it entirely.
+          const remappedFontName = allInnerInfos[i].textKey.textStyleRange[0].textStyle.fontName;
+          const remappedFontStyle = allInnerInfos[i].textKey.textStyleRange[0].textStyle.fontStyleName;
+
+          await batchPlay([{
+            _obj: "set",
+            _target: [
+              { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+            ],
+            to: {
+              _obj: "textLayer",
+              textKey: translation,
+              textStyleRange: [{
+                _obj: "textStyleRange",
+                from: 0,
+                to: translation.length,
+                textStyle: {
+                  _obj: "textStyle",
+                  fontName: remappedFontName,
+                  fontStyleName: remappedFontStyle,
+                  size: { _unit: "pointsUnit", _value: originalSize }
+                }
+              }]
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }], { synchronousExecution: true });
+
+          console.log(`[font-replace] "${layer.name}": atomic write with ${remappedFontName}`);
+
+        } else {
+          // ── NORMAL WRITE: textItem.contents + size restore ──
+          layer.textItem.contents = translation;
+
+          await batchPlay([{
+            _obj: "set",
+            _target: [
+              { _ref: "property", _property: "textStyle" },
+              { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+            ],
+            to: {
+              _obj: "textStyle",
+              textOverrideFeatureName: 808465458,
+              typeStyleOperationType: 3,
+              size: { _unit: "pointsUnit", _value: originalSize }
+            },
+            _options: { dialogOptions: "dontDisplay" }
+          }], { synchronousExecution: true });
+        }
       }
 
       // --- STEP 7: Crop the SO canvas to fit the translated text layer bounds ---
@@ -478,48 +517,97 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
   // ── TRANSLATE TEXT LAYERS ────────────────────────────────────
   let allInnerInfos = null;
   if (textLayers.length > 0) {
+
+    // ── STEP A: Snapshot all layer descriptors BEFORE any changes ──
+    // We need this to: (1) detect missing fonts, (2) read original font sizes.
+    // Must happen before remapFonts, because remap changes fontAvailable to true.
+    const preRemapInfos = await batchPlay(
+      allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
+      { synchronousExecution: true }
+    );
+
+    // ── STEP B: Remap all missing fonts in one document-wide pass ──
+    // remapFonts replaces the font identity on all layers at once.
+    // This must happen BEFORE any text writes, because textItem.contents
+    // permanently nukes remapped fonts (PS treats them as "was missing").
+    // After remap + atomic write, the font sticks.
+    if (REPLACE_MISSING_FONTS) await remapMissingFontsInDocument(preRemapInfos);
+
+    // ── STEP C: Re-fetch descriptors AFTER remap ──
+    // We need fresh font names (e.g. "Ethnocentric" instead of "Karla")
+    // to use in the atomic batchPlay write for missing-font layers.
     allInnerInfos = await batchPlay(
       allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
       { synchronousExecution: true }
     );
 
+    // ── STEP D: Translate each visible text layer ──
     for (let i = 0; i < allLayers.length; i++) {
       const layer = allLayers[i];
       if (layer.kind !== "text" || !layer.visible) continue;
 
       const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
 
+      // Check if this layer's font was missing BEFORE the remap.
+      // We use the pre-remap snapshot because after remap fontAvailable is true for all.
+      const fontWasMissing = REPLACE_MISSING_FONTS && layerHasMissingFont(preRemapInfos[i]);
 
-
-        const isMissingFont = await hasMissingFont(layer);
-        if (isMissingFont) {
-          console.log(`Layer "${layer.name}" has missing font`);
-        } else {
-          console.log(`Layer "${layer.name}" font is available`);
-        }
-
-
-      // If the font is missing, swap it to the fallback BEFORE writing new text.
-      // This prevents PS from using its own default substitute (usually Myriad Pro).
-      if (REPLACE_MISSING_FONTS && isMissingFont) await replaceMissingFont(allInnerInfos[i]);
-
-      layer.textItem.contents = translation;
       app.activeDocument.activeLayers = [layer];
 
-      await batchPlay([{
-        _obj: "set",
-        _target: [
-          { _ref: "property", _property: "textStyle" },
-          { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
-        ],
-        to: {
-          _obj: "textStyle",
-          textOverrideFeatureName: 808465458,
-          typeStyleOperationType: 3,
-          size: { _unit: "pointsUnit", _value: originalSize }
-        },
-        _options: { dialogOptions: "dontDisplay" }
-      }], { synchronousExecution: true });
+      if (fontWasMissing) {
+        // ── ATOMIC WRITE PATH (missing font layers) ──
+        // textItem.contents permanently destroys remapped fonts.
+        // Instead, we write text + font + size in one atomic batchPlay call.
+        // The font name comes from the POST-remap descriptor (e.g. "Ethnocentric").
+        const remappedFontName = allInnerInfos[i].textKey.textStyleRange[0].textStyle.fontName;
+        const remappedFontStyle = allInnerInfos[i].textKey.textStyleRange[0].textStyle.fontStyleName;
+
+        await batchPlay([{
+          _obj: "set",
+          _target: [
+            { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+          ],
+          to: {
+            _obj: "textLayer",
+            textKey: translation,
+            textStyleRange: [{
+              _obj: "textStyleRange",
+              from: 0,
+              to: translation.length,
+              textStyle: {
+                _obj: "textStyle",
+                fontName: remappedFontName,
+                fontStyleName: remappedFontStyle,
+                size: { _unit: "pointsUnit", _value: originalSize }
+              }
+            }]
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }], { synchronousExecution: true });
+
+        console.log(`[font-replace] "${layer.name}": atomic write with ${remappedFontName}`);
+
+      } else {
+        // ── NORMAL WRITE PATH (font is installed, no issues) ──
+        // textItem.contents resets font size but preserves installed fonts.
+        // We restore the original size via batchPlay immediately after.
+        layer.textItem.contents = translation;
+
+        await batchPlay([{
+          _obj: "set",
+          _target: [
+            { _ref: "property", _property: "textStyle" },
+            { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+          ],
+          to: {
+            _obj: "textStyle",
+            textOverrideFeatureName: 808465458,
+            typeStyleOperationType: 3,
+            size: { _unit: "pointsUnit", _value: originalSize }
+          },
+          _options: { dialogOptions: "dontDisplay" }
+        }], { synchronousExecution: true });
+      }
     }
   }
 
@@ -568,50 +656,65 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Checks if a text layer's font is missing and replaces it with FALLBACK_FONT.
- * Must be called inside an executeAsModal context, with the layer already selected
- * (app.activeDocument.activeLayers = [layer]).
+ * Checks if a single layer descriptor has any missing fonts.
+ * Pure read — no batchPlay calls, no side effects.
+ * Reads from the pre-captured snapshot (before remapFonts runs).
  *
- * How it works:
- *   1. Reads the textStyleRange array from the layer's batchPlay descriptor.
- *   2. Checks every style range for fontAvailable === false.
- *      (A single layer can have mixed fonts across ranges, e.g. bold + italic spans.)
- *   3. If ANY range has a missing font, applies a batchPlay "set" that overwrites
- *      the font on the entire layer to FALLBACK_FONT.
- *
- * @param {Object} layerDescriptor - The batchPlay descriptor for this layer
- *                                   (one element from allInnerInfos).
- * @returns {boolean} true if a font was replaced, false if all fonts were available.
+ * @param {Object} layerDescriptor - One element from allInnerInfos.
+ * @returns {boolean} true if any textStyleRange has fontAvailable === false.
  */
-async function replaceMissingFont(layerDescriptor) {
-  // Grab the style ranges — each range describes font/size/color for a span of characters
+function layerHasMissingFont(layerDescriptor) {
   const styleRanges = layerDescriptor?.textKey?.textStyleRange;
   if (!styleRanges) return false;
+  return styleRanges.some(range => range.textStyle?.fontAvailable === false);
+}
 
-  // Check if ANY style range reports the font as unavailable
-  const hasMissingFont = styleRanges.some(
-    range => range.textStyle?.fontAvailable === false
-  );
-  if (!hasMissingFont) return false;
 
-  // Collect every unique missing font (fontName + fontStyleName combo)
-  // so we can remap them all in one batchPlay call
+/**
+ * Scans all layer descriptors for missing fonts and remaps them to FALLBACK_FONT
+ * in one document-wide batchPlay call.
+ *
+ * IMPORTANT: Must be called ONCE before the translation loop, not per-layer.
+ * After this call, all previously-missing fonts become FALLBACK_FONT with fontAvailable=true.
+ * The caller should re-fetch descriptors after this to get the updated font names.
+ *
+ * Why remapFonts + atomic write instead of textItem.contents?
+ *   - textItem.contents permanently destroys any font that was ever "missing",
+ *     even after remapFonts fixes it. PS remembers the "was missing" stain.
+ *   - So for missing-font layers, we use atomic batchPlay writes (set textLayer)
+ *     which don't trigger the font reset. Normal layers use textItem.contents as before.
+ *
+ * @param {Object[]} allLayerDescriptors - Pre-remap batchPlay descriptors for all layers.
+ * @returns {boolean} true if any fonts were remapped.
+ */
+async function remapMissingFontsInDocument(allLayerDescriptors) {
+  // Collect every unique missing font across all layers.
+  // Each layer can have multiple textStyleRanges (mixed formatting),
+  // and each range can have a different font.
   const missingFontsMap = new Map();
-  for (const range of styleRanges) {
-    if (range.textStyle?.fontAvailable === false) {
-      const missingFontName = range.textStyle.fontName;
-      const missingFontStyle = range.textStyle.fontStyleName;
-      // Use "name|style" as key to deduplicate (same font can appear in multiple ranges)
-      const dedupeKey = `${missingFontName}|${missingFontStyle}`;
-      if (!missingFontsMap.has(dedupeKey)) {
-        missingFontsMap.set(dedupeKey, { fontName: missingFontName, fontStyleName: missingFontStyle });
-        console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → replacing with "${FALLBACK_FONT.fontName}"`);
+
+  for (const layerDescriptor of allLayerDescriptors) {
+    const styleRanges = layerDescriptor?.textKey?.textStyleRange;
+    if (!styleRanges) continue;
+
+    for (const range of styleRanges) {
+      if (range.textStyle?.fontAvailable === false) {
+        const missingFontName = range.textStyle.fontName;
+        const missingFontStyle = range.textStyle.fontStyleName;
+        // Deduplicate — same font on different layers only needs one fontMap entry
+        const dedupeKey = `${missingFontName}|${missingFontStyle}`;
+        if (!missingFontsMap.has(dedupeKey)) {
+          missingFontsMap.set(dedupeKey, { fontName: missingFontName, fontStyleName: missingFontStyle });
+          console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → will remap to "${FALLBACK_FONT.fontName}"`);
+        }
       }
     }
   }
 
-  // Build the fontMap array — one entry per unique missing font,
-  // all pointing to the same fallback
+  // No missing fonts — nothing to do
+  if (missingFontsMap.size === 0) return false;
+
+  // Build one fontMap entry per unique missing font, all pointing to FALLBACK_FONT
   const fontMapEntries = Array.from(missingFontsMap.values()).map(missingFont => ({
     _obj: "fontRemapEntry",
     fromFont: {
@@ -626,14 +729,14 @@ async function replaceMissingFont(layerDescriptor) {
     }
   }));
 
-  // Single batchPlay call replaces ALL missing fonts across the entire document at once.
-  // Uses PS's built-in "remapFonts" command — much cleaner than per-layer textStyle overrides.
+  // One single remapFonts call for the entire document
   await batchPlay([{
     _obj: "remapFonts",
     fontMap: fontMapEntries,
     _options: { dialogOptions: "dontDisplay" }
   }], { synchronousExecution: true });
 
+  console.log(`[font-replace] Remapped ${missingFontsMap.size} missing font(s) → "${FALLBACK_FONT.fontName}"`);
   return true;
 }
 

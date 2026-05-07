@@ -282,3 +282,79 @@ function buildDoNotTranslateSet(rawEnPhrase) {
 ```
 
 `processMatchedFolder` calls `buildDoNotTranslateSet(matchedPhrase)` before calling `matchLayersToLines` and passes the result as the 4th argument. `matchLayersToLines` signature is now `(childLayers, enLines, transLines, doNotTranslate = new Set())`. The skipped layer's `enIndex` is still added to `assignedEnIndices` so subsequent layers receive the correct trans slot — positional alignment is preserved.
+
+---
+
+## Session — May 7 2026 — Recursive SO translation + Missing font replacement
+
+### Recursive SO translation ✅ WORKING
+
+Smart Objects can contain nested SOs — an SO inside an SO containing the actual text layer. `translateSmartObject` previously only went one level deep: open SO → find text layers → translate. If no text layers were found, it closed and gave up.
+
+**Fix:** Added `translateSmartObjectRecursive` and `_translateSOContentsRecursive` — a recursive variant that, after translating any text layers at the current level, also enters nested SOs and repeats the process. Gated by `RECURSIVE_SO = true` flag. A single if-statement at the top of the original `translateSmartObject` redirects to the recursive path. Original code is completely untouched below that line.
+
+**Key details:**
+- `purgeSOInstancesFromArray` is used at each recursion level to deduplicate nested SO instances
+- `cropCanvasToLayerBounds` only runs at the top-level SO (controlled by `isTopLevel` parameter)
+- Each recursion level saves and closes its own SO document, naturally unwinding the PS document stack
+- No depth limit needed — Photoshop's own layer structure is finite
+
+**Revert:** `RECURSIVE_SO = false` → one-line redirect stops firing, old code runs unchanged.
+
+---
+
+### Missing font replacement ✅ WORKING
+
+**Problem:** PSD files often contain text layers using fonts not installed on the current machine. Photoshop substitutes Myriad Pro, which looks wrong. The plugin needed to replace missing fonts with a configurable fallback.
+
+**What didn't work (the journey):**
+
+- `textItem.contents` (PS DOM API for writing text) permanently destroys any font that PS internally considers "was missing" — even if the font has been fixed by `remapFonts` beforehand. Installed fonts survive the write; previously-missing fonts revert to Myriad Pro. This is a PS internal behavior, not a bug in our code.
+- Setting the font via `textStyle` batchPlay before OR after `textItem.contents` — PS ignores it for previously-missing fonts.
+- Calling `remapFonts` after all writes — the writes already changed the font identity from Karla to Myriad Pro, so `remapFonts` has nothing to match on.
+- Saving after `remapFonts` to "bake it in" before writing — still didn't survive `textItem.contents`.
+
+**The working solution — two-part approach:**
+
+**Part 1: `remapFonts` before the loop** — PS's built-in `remapFonts` batchPlay command replaces all instances of a missing font across the entire document in one call. This runs once, before any text is written. After this call, all layers report the fallback font with `fontAvailable: true`.
+
+**Part 2: Atomic batchPlay write instead of `textItem.contents`** — For layers that had missing fonts, we bypass `textItem.contents` entirely. Instead, we write text + font + size in one atomic `set textLayer` batchPlay call with `textKey` + `textStyleRange`. This write method does NOT trigger PS's font destruction behavior. Layers with installed fonts still use the normal `textItem.contents` + size restore path (proven and safe).
+
+**Implementation flow in the translate loop:**
+
+```
+STEP A: Snapshot all layer descriptors (preRemapInfos)
+        → Used to detect which layers have fontAvailable === false
+
+STEP B: remapMissingFontsInDocument(preRemapInfos)
+        → Scans all descriptors, collects unique missing fontName|fontStyleName combos
+        → Fires ONE remapFonts batchPlay call mapping them all to FALLBACK_FONT
+
+STEP C: Re-fetch descriptors (allInnerInfos)
+        → Now contains the remapped font names (e.g. "Ethnocentric" instead of "Karla")
+
+STEP D: For each text layer:
+        → Read fontWasMissing from preRemapInfos (BEFORE remap snapshot)
+        → If fontWasMissing:
+            Atomic batchPlay write: set textLayer with textKey + textStyleRange
+            (font name comes from post-remap descriptor)
+        → If font was fine:
+            Normal textItem.contents + size restore (existing code)
+```
+
+**Key functions:**
+- `layerHasMissingFont(descriptor)` — pure sync check, reads `fontAvailable` from a pre-captured descriptor. No batchPlay.
+- `remapMissingFontsInDocument(descriptors)` — scans all descriptors, deduplicates missing fonts, fires one `remapFonts` call.
+
+**Configuration:**
+```js
+const REPLACE_MISSING_FONTS = true;
+const FALLBACK_FONT = {
+  fontName: "Ethnocentric",
+  fontStyleName: ""
+};
+```
+
+**Revert:** `REPLACE_MISSING_FONTS = false` → all font logic is skipped, every layer uses `textItem.contents` as before.
+
+**Applied to both:** original `translateSmartObject` and `_translateSOContentsRecursive`.
