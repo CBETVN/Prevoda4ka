@@ -9,6 +9,7 @@ import { LoadFDiskButton } from "./components/LoadFDiskButton";
 import { LoadFURLButton } from "./components/LoadFURLButton";
 import { TranslateAllButton } from "./components/TranslateAllButton";
 import { LanguageSelectorDropdown } from "./components/LanguageSelectorDropdown";
+import { FontSelectorDropdown } from "./components/FontSelectorDropdown";
 import { DataStatusIcon } from "./components/DataStatusIcon";
 import { GenerateSuggestionsButton } from "./components/GenerateSuggestionsButton";
 import { TranslateSelectedTextField } from "./components/TranslateSelectedTextField";
@@ -44,12 +45,13 @@ export const App = () => {
   selectedLanguage,
   isDataLoaded,
   availableFonts,
+  selectedFont,
   suggestionTextfieldValue: textfieldValue,
   // ...add more as needed
   };
 
 
-  const handleFileLoaded = (parsedData) => {
+  const handleFileLoaded = ({parsedData, availableFonts}) => {
     // Check if languageData is a non-empty object
     const hasLanguageData =
       parsedData &&
@@ -69,6 +71,8 @@ export const App = () => {
     setLanguageData(parsedData.languageData);
     setAvailableLanguages(parsedData.availableLanguages);
     setIsDataLoaded(true);
+    setFonts(availableFonts);
+    console.log("handleFileLoaded: availableFonts:", availableFonts);
     // Don't auto-select - let user choose
   };
 
@@ -181,6 +185,14 @@ export const App = () => {
             availableLanguages={availableLanguages}
             selectedLanguage={selectedLanguage}
             onLanguageChange={setSelectedLanguage}
+          />
+          </div>
+                    <div className="card">
+
+            <FontSelectorDropdown
+            availableFonts={availableFonts}
+            selectedFont={selectedFont}
+            onFontChange={setSelectedFont}
           />
           </div>
           <TranslateAllButton appState={appState} />
