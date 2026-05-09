@@ -16,6 +16,8 @@ export const LoadFDiskButton = ({ onFileLoaded }) => {
       console.log("File selected:", file.name);
 
       const parsedData = await api.parseExcelFile(file);
+      const availabeFonts = await api.getAllFonts();
+      console.log("Available fonts:", availabeFonts);
 
       console.log("Parsed data:", parsedData);
       console.log("Available languages:", parsedData.availableLanguages);

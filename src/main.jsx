@@ -30,7 +30,8 @@ export const App = () => {
   const [availableLanguages, setAvailableLanguages] = useState([]);
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-
+  const [availableFonts, setFonts] = useState([]);
+  const [selectedFont, setSelectedFont] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -42,16 +43,19 @@ export const App = () => {
   availableLanguages,
   selectedLanguage,
   isDataLoaded,
+  availableFonts,
   suggestionTextfieldValue: textfieldValue,
   // ...add more as needed
   };
 
 
   const handleFileLoaded = (parsedData) => {
+    // Check if languageData is a non-empty object
     const hasLanguageData =
       parsedData &&
       parsedData.languageData &&
       Object.keys(parsedData.languageData).length > 0;
+    //Check if availableLanguages is a non-empty array  
     const hasAvailableLanguages =
       parsedData &&
       Array.isArray(parsedData.availableLanguages) &&
