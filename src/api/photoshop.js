@@ -1,6 +1,6 @@
 import { photoshop } from "../globals";
 // import { asModal as executeAsModal } from "./utils/photoshop-utils.js";
-
+import {changeFont} from "./fontManager.js";
 const { action } = photoshop;
 const { batchPlay } = action;
 const { app } = photoshop;
@@ -123,7 +123,7 @@ export async function translateSmartObject(smartObject, translation) {
 
       // --- STEP 5.5: Remap all missing fonts in one document-wide pass ---
       // Must happen before text writes. See _translateSOContentsRecursive for full explanation.
-      if (REPLACE_MISSING_FONTS) await remapMissingFontsInDocument(preRemapInfos);
+      if (REPLACE_MISSING_FONTS) await changeFont(preRemapInfos);
 
       // --- STEP 5.6: Re-fetch descriptors AFTER remap ---
       // Fresh font names needed for the atomic write path.
@@ -531,7 +531,7 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
     // This must happen BEFORE any text writes, because textItem.contents
     // permanently nukes remapped fonts (PS treats them as "was missing").
     // After remap + atomic write, the font sticks.
-    if (REPLACE_MISSING_FONTS) await remapMissingFontsInDocument(preRemapInfos);
+    if (REPLACE_MISSING_FONTS) await changeFont(preRemapInfos);
 
     // ── STEP C: Re-fetch descriptors AFTER remap ──
     // We need fresh font names (e.g. "Ethnocentric" instead of "Karla")
@@ -670,75 +670,7 @@ function layerHasMissingFont(layerDescriptor) {
 }
 
 
-/**
- * Scans all layer descriptors for missing fonts and remaps them to FALLBACK_FONT
- * in one document-wide batchPlay call.
- *
- * IMPORTANT: Must be called ONCE before the translation loop, not per-layer.
- * After this call, all previously-missing fonts become FALLBACK_FONT with fontAvailable=true.
- * The caller should re-fetch descriptors after this to get the updated font names.
- *
- * Why remapFonts + atomic write instead of textItem.contents?
- *   - textItem.contents permanently destroys any font that was ever "missing",
- *     even after remapFonts fixes it. PS remembers the "was missing" stain.
- *   - So for missing-font layers, we use atomic batchPlay writes (set textLayer)
- *     which don't trigger the font reset. Normal layers use textItem.contents as before.
- *
- * @param {Object[]} allLayerDescriptors - Pre-remap batchPlay descriptors for all layers.
- * @returns {boolean} true if any fonts were remapped.
- */
-async function remapMissingFontsInDocument(allLayerDescriptors) {
-  // Collect every unique missing font across all layers.
-  // Each layer can have multiple textStyleRanges (mixed formatting),
-  // and each range can have a different font.
-  const missingFontsMap = new Map();
 
-  for (const layerDescriptor of allLayerDescriptors) {
-    const styleRanges = layerDescriptor?.textKey?.textStyleRange;
-    if (!styleRanges) continue;
-
-    for (const range of styleRanges) {
-      if (range.textStyle?.fontAvailable === false) {
-        const missingFontName = range.textStyle.fontName;
-        const missingFontStyle = range.textStyle.fontStyleName;
-        // Deduplicate — same font on different layers only needs one fontMap entry
-        const dedupeKey = `${missingFontName}|${missingFontStyle}`;
-        if (!missingFontsMap.has(dedupeKey)) {
-          missingFontsMap.set(dedupeKey, { fontName: missingFontName, fontStyleName: missingFontStyle });
-          console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → will remap to "${FALLBACK_FONT.fontName}"`);
-        }
-      }
-    }
-  }
-
-  // No missing fonts — nothing to do
-  if (missingFontsMap.size === 0) return false;
-
-  // Build one fontMap entry per unique missing font, all pointing to FALLBACK_FONT
-  const fontMapEntries = Array.from(missingFontsMap.values()).map(missingFont => ({
-    _obj: "fontRemapEntry",
-    fromFont: {
-      _obj: "fontSpec",
-      fontName: missingFont.fontName,
-      fontStyleName: missingFont.fontStyleName
-    },
-    toFont: {
-      _obj: "fontSpec",
-      fontName: FALLBACK_FONT.fontName,
-      fontStyleName: FALLBACK_FONT.fontStyleName
-    }
-  }));
-
-  // One single remapFonts call for the entire document
-  await batchPlay([{
-    _obj: "remapFonts",
-    fontMap: fontMapEntries,
-    _options: { dialogOptions: "dontDisplay" }
-  }], { synchronousExecution: true });
-
-  console.log(`[font-replace] Remapped ${missingFontsMap.size} missing font(s) → "${FALLBACK_FONT.fontName}"`);
-  return true;
-}
 
 
 
