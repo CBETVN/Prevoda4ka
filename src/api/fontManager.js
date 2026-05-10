@@ -68,76 +68,121 @@ export async function getAllFonts() {
 
 
 /**
- * Scans all layer descriptors for missing fonts and remaps them to FALLBACK_FONT
- * in one document-wide batchPlay call.
+ * Changes ALL text layer fonts to substituteFont. Two-part approach:
  *
- * IMPORTANT: Must be called ONCE before the translation loop, not per-layer.
- * After this call, all previously-missing fonts become FALLBACK_FONT with fontAvailable=true.
- * The caller should re-fetch descriptors after this to get the updated font names.
+ * PART 1 — Missing fonts: uses PS `remapFonts` (one document-wide batchPlay call).
+ *   remapFonts is the only way to fix missing fonts — per-layer set won't work
+ *   because PS refuses to resolve a font it considers missing.
  *
- * Why remapFonts + atomic write instead of textItem.contents?
- *   - textItem.contents permanently destroys any font that was ever "missing",
- *     even after remapFonts fixes it. PS remembers the "was missing" stain.
- *   - So for missing-font layers, we use atomic batchPlay writes (set textLayer)
- *     which don't trigger the font reset. Normal layers use textItem.contents as before.
+ * PART 2 — Installed fonts: uses `set textLayer` per layer.
+ *   For each text layer whose font is already installed but differs from the
+ *   substitute, we clone its full textKey descriptor, swap font properties in
+ *   every textStyleRange, and apply via batchPlay. The full textKey spread
+ *   preserves text content, paragraph styles, and all other formatting.
+ *   All select+set pairs are batched into one batchPlay call for speed.
+ *
+ * Called ONCE before the translation loop, not per-layer.
+ * The caller should re-fetch descriptors after this call to get updated font names.
  *
  * @param {Object[]} allLayerDescriptors - Pre-remap batchPlay descriptors for all layers.
- * @returns {boolean} true if any fonts were remapped.
+ * @returns {boolean} true if any fonts were changed.
  */
 export async function changeFont(allLayerDescriptors) {
-  // Collect every unique missing font across all layers.
-  // Each layer can have multiple textStyleRanges (mixed formatting),
-  // and each range can have a different font.
+  if (!substituteFont) return false;
+
+  // Look up the real style/postScriptName for the user-selected font.
+  // substituteFont is font.name (e.g. "Oswald Bold"), allFontsWithStyles maps it
+  // to { postScriptName, family, style } for use in batchPlay font fields.
+  const fontInfo = allFontsWithStyles[substituteFont];
+  const targetFamily = fontInfo?.family || "Myriad Pro";
+  const targetStyle = fontInfo?.style || "Regular";
+  const targetPostScript = fontInfo?.postScriptName || "MyriadPro-Regular";
+
+  // ══════════════════════════════════════════════════════════════
+  // PART 1: Missing fonts → document-wide remapFonts
+  // Collects every unique missing font across all layers and remaps
+  // them all to the substitute in one call. After this, PS considers
+  // them installed (fontAvailable becomes true).
+  // ══════════════════════════════════════════════════════════════
   const missingFontsMap = new Map();
 
-  for (const layerDescriptor of allLayerDescriptors) {
-    const styleRanges = layerDescriptor?.textKey?.textStyleRange;
-    if (!styleRanges) continue;
-
-    for (const range of styleRanges) {
-      if (range.textStyle?.fontAvailable === false) {
-        const missingFontName = range.textStyle.fontName;
-        const missingFontStyle = range.textStyle.fontStyleName;
-        // Deduplicate — same font on different layers only needs one fontMap entry
-        const dedupeKey = `${missingFontName}|${missingFontStyle}`;
-        if (!missingFontsMap.has(dedupeKey)) {
-          missingFontsMap.set(dedupeKey, { fontName: missingFontName, fontStyleName: missingFontStyle });
-          console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → will remap to "${substituteFont}"`);
+  for (const desc of allLayerDescriptors) {
+    const ranges = desc?.textKey?.textStyleRange;
+    if (!ranges) continue;
+    for (const r of ranges) {
+      if (r.textStyle?.fontAvailable === false) {
+        const key = `${r.textStyle.fontName}|${r.textStyle.fontStyleName}`;
+        if (!missingFontsMap.has(key)) {
+          missingFontsMap.set(key, { fontName: r.textStyle.fontName, fontStyleName: r.textStyle.fontStyleName });
+          console.log(`[font] MISSING: "${r.textStyle.fontName} ${r.textStyle.fontStyleName}" → will remap to "${substituteFont}"`);
         }
       }
     }
   }
 
-  // No missing fonts — nothing to do
-  if (missingFontsMap.size === 0) return false;
-  if (!substituteFont) {
-    console.warn("[font-replace] No substitute font selected. Please select a font to replace missing fonts.");
-    return false;
+  if (missingFontsMap.size > 0) {
+    // remapFonts needs family + style (not postScriptName) to resolve the target font
+    const entries = Array.from(missingFontsMap.values()).map(f => ({
+      _obj: "fontRemapEntry",
+      fromFont: { _obj: "fontSpec", fontName: f.fontName, fontStyleName: f.fontStyleName },
+      toFont: { _obj: "fontSpec", fontName: targetFamily, fontStyleName: targetStyle }
+    }));
+    await batchPlay([{
+      _obj: "remapFonts", fontMap: entries,
+      _options: { dialogOptions: "dontDisplay" }
+    }], { synchronousExecution: true });
+    console.log(`[font] Remapped ${missingFontsMap.size} missing font(s) → "${substituteFont}"`);
   }
 
-  // Build one fontMap entry per unique missing font, all pointing to FALLBACK_FONT
-  const fontMapEntries = Array.from(missingFontsMap.values()).map(missingFont => ({
-    _obj: "fontRemapEntry",
-    fromFont: {
-      _obj: "fontSpec",
-      fontName: missingFont.fontName,
-      fontStyleName: missingFont.fontStyleName
-    },
-    toFont: {
-      _obj: "fontSpec",
-      fontName: allFontsWithStyles[substituteFont]?.family || "Myriad Pro",  // Use family name for remapping because substituteFont is a postScriptName and passing style after it messess up the remapFonts call. PS needs family+style to find the correct font.
-      fontStyleName: allFontsWithStyles[substituteFont]?.style || "Regular"
-    }
-  }));
+  // ══════════════════════════════════════════════════════════════
+  // PART 2: Installed fonts → per-layer set textLayer
+  // For layers that already have an installed font (but not the substitute),
+  // we change the font via batchPlay "set textLayer".
+  // Each layer needs a select (to make it active) + set (to apply the change),
+  // because "set textLayer" targets the active layer (ordinal/targetEnum).
+  // All pairs are batched into one batchPlay call.
+  // ══════════════════════════════════════════════════════════════
+  const batchCommands = [];
 
-  // One single remapFonts call for the entire document
-  await batchPlay([{
-    _obj: "remapFonts",
-    fontMap: fontMapEntries,
-    _options: { dialogOptions: "dontDisplay" }
-  }], { synchronousExecution: true });
+  for (const desc of allLayerDescriptors) {
+    const textKeyObj = desc?.textKey;
+    if (!textKeyObj?.textStyleRange) continue;
 
-  console.log(`[font-replace] Remapped ${missingFontsMap.size} missing font(s) → "${substituteFont}"`);
+    // Skip missing-font layers — already handled by remapFonts in PART 1
+    if (textKeyObj.textStyleRange.some(r => r.textStyle?.fontAvailable === false)) continue;
+
+    // Skip layers already using the substitute font
+    if (textKeyObj.textStyleRange.every(r => r.textStyle?.fontName === substituteFont)) continue;
+
+    // Clone the full textKey and swap only font properties in each style range.
+    // Spreading textKeyObj preserves: text content, paragraph styles, warp, etc.
+    const modifiedTextKey = { ...textKeyObj };
+    modifiedTextKey.textStyleRange = textKeyObj.textStyleRange.map(range => ({
+      ...range,
+      textStyle: {
+        ...range.textStyle,
+        fontPostScriptName: targetPostScript,
+        fontName: substituteFont,
+        fontStyleName: targetStyle
+      }
+    }));
+
+    // Select the layer by ID, then set its text style
+    batchCommands.push(
+      { _obj: "select", _target: [{ _ref: "layer", _id: desc.layerID }], _options: { dialogOptions: "dontDisplay" } },
+      { _obj: "set",
+        _target: [{ _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }],
+        to: { _obj: "textLayer", ...modifiedTextKey },
+        _options: { dialogOptions: "dontDisplay" }
+      }
+    );
+  }
+
+  if (batchCommands.length > 0) {
+    await batchPlay(batchCommands, { synchronousExecution: true });
+    console.log(`[font] Changed ${batchCommands.length / 2} installed-font layer(s) → "${substituteFont}"`);
+  }
+
   return true;
 }
 
