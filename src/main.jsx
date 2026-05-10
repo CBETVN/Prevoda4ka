@@ -19,6 +19,7 @@ import { ValidateMasterFile } from "./components/ValidateMasterFile";
 import * as validate from "./api/validateMasterFile";
 import * as pl from "./api/parsingLogic";
 import * as phraseGuesser from "./api/phraseGuesser";
+import { setSubstituteFont } from "./api/fontManager.js";
 // import * as XLSX from "./lib/xlsx.full.min.js";
 
 const { app, core, action } = photoshop;
@@ -192,7 +193,10 @@ export const App = () => {
             <FontSelectorDropdown
             availableFonts={availableFonts}
             selectedFont={selectedFont}
-            onFontChange={setSelectedFont}
+            onFontChange={(font) => {
+            setSelectedFont(font);
+            setSubstituteFont(font);
+            }}
           />
           </div>
           <TranslateAllButton appState={appState} />

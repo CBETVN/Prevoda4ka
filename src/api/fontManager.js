@@ -3,10 +3,11 @@ import { photoshop } from "../globals.js";
 const { app } = photoshop;
 const { batchPlay } = photoshop.action;
 
-const FALLBACK_FONT = {
-  fontName: "Ethnocentric",
-  fontStyleName: ""
-};
+let substituteFont = "Ethnocentric";
+
+export function setSubstituteFont(fontName) {
+  substituteFont = fontName;
+}
 
 
 
@@ -80,7 +81,7 @@ export async function changeFont(allLayerDescriptors) {
         const dedupeKey = `${missingFontName}|${missingFontStyle}`;
         if (!missingFontsMap.has(dedupeKey)) {
           missingFontsMap.set(dedupeKey, { fontName: missingFontName, fontStyleName: missingFontStyle });
-          console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → will remap to "${FALLBACK_FONT.fontName}"`);
+          console.log(`[font-replace] "${missingFontName} ${missingFontStyle}" is missing → will remap to "${substituteFont}"`);
         }
       }
     }
@@ -99,8 +100,8 @@ export async function changeFont(allLayerDescriptors) {
     },
     toFont: {
       _obj: "fontSpec",
-      fontName: FALLBACK_FONT.fontName,
-      fontStyleName: FALLBACK_FONT.fontStyleName
+      fontName: substituteFont,
+      fontStyleName: substituteFont
     }
   }));
 
@@ -111,6 +112,63 @@ export async function changeFont(allLayerDescriptors) {
     _options: { dialogOptions: "dontDisplay" }
   }], { synchronousExecution: true });
 
-  console.log(`[font-replace] Remapped ${missingFontsMap.size} missing font(s) → "${FALLBACK_FONT.fontName}"`);
+  console.log(`[font-replace] Remapped ${missingFontsMap.size} missing font(s) → "${substituteFont}"`);
   return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+// TESTING ONLY - NOT A REAL FUNCTION
+async function changeFontToPanoptica() {
+  // Get the current layer descriptor
+  const result = await batchPlay(
+    [{
+      _obj: "get",
+      _target: [
+        { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }
+      ],
+      _options: { dialogOptions: "dontDisplay" }
+    }],
+    { synchronousExecution: true }
+  );
+
+  const layerInfo = result[0];
+  const textKey = { ...layerInfo.textKey };
+
+  // Change only the font in all textStyleRanges
+  textKey.textStyleRange = textKey.textStyleRange.map(range => ({
+    ...range,
+    textStyle: {
+      ...range.textStyle,
+      fontPostScriptName: "Panoptica"
+    }
+  }));
+console.log("Layer textKey:", textKey);
+console.log("Attempting to set font to Panoptica...");
+  // Run the set command inside executeAsModal
+  await executeAsModal(async () => {
+    await batchPlay(
+      [{
+        _obj: "set",
+        _target: [
+          { _ref: "textLayer", _enum: "ordinal", _value: "targetEnum" }
+        ],
+        to: {
+          _obj: "textLayer",
+          ...textKey // Spread all properties for point text
+        }
+      }],
+      { synchronousExecution: true }
+    );
+  }, { commandName: "Change Font to Panoptica" });
 }

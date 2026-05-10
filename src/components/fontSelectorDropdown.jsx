@@ -7,6 +7,7 @@ export const FontSelectorDropdown = ({
 }) => {
   const handleChange = (event) => {
     const newFont = event.target.value;
+    console.log("Font selected:", newFont);
     onFontChange(newFont);
   };
   const placeholder = "Select Font";
