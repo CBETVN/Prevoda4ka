@@ -3,7 +3,10 @@ import { photoshop } from "../globals.js";
 const { app } = photoshop;
 const { batchPlay } = photoshop.action;
 
-let substituteFont = "Ethnocentric";
+
+
+//This need attention. What if doesnt select anything and there is a missing font?
+let substituteFont = null;
 
 export function setSubstituteFont(fontName) {
   substituteFont = fontName;
@@ -13,15 +16,39 @@ export function setSubstituteFont(fontName) {
 
 
 
+// Get the fonst with styles from here instead of putting them in the state
+let allFontsWithStyles = null;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 export async function getAllFonts() {
-    // const allFontObjects = app.fonts; // Photoshop font list
-    // const fonts = allFontObjects.map(font => (font.family)); // Extract family names
-    // return fonts;
-    const allFontObjects = app.fonts; // Photoshop font list
+
+  
+
+    const allFontsArray = app.fonts.map(font => ({name: font.name, postScriptName: font.postScriptName,family: font.family, style: font.style}));
+    console.log("All fonts from allFontsMap:", allFontsArray);
+    //turns an array of font objects into a map keyed by font name, with values containing postScriptName, family, and style
+    allFontsWithStyles = Object.fromEntries(allFontsArray.map(({name, ...rest}) => [name, rest]));
+    console.log("All fonts with styles:", allFontsWithStyles);
+    
     const fontsSet = new Set(); // Use a Set to avoid duplicates
-    allFontObjects.forEach(font => fontsSet.add(font.family)); // Extract family names
+    
+    allFontsArray.forEach(font => fontsSet.add(font.name)); // Extract family names
     const fonts = Array.from(fontsSet).sort(); // Convert back to array and sort alphabetically
     return fonts;
     // return fonts.map(font => ({
@@ -31,12 +58,6 @@ export async function getAllFonts() {
     //     style: font.style
     // }));
 }
-
-// async function logFonts() {
-//     const fonts = await getAllFonts();
-//     fonts.forEach(font => {console.log(font.family)});
-//     // console.log(fonts);
-// }
 
 
 
@@ -89,6 +110,10 @@ export async function changeFont(allLayerDescriptors) {
 
   // No missing fonts — nothing to do
   if (missingFontsMap.size === 0) return false;
+  if (!substituteFont) {
+    console.warn("[font-replace] No substitute font selected. Please select a font to replace missing fonts.");
+    return false;
+  }
 
   // Build one fontMap entry per unique missing font, all pointing to FALLBACK_FONT
   const fontMapEntries = Array.from(missingFontsMap.values()).map(missingFont => ({
@@ -100,8 +125,8 @@ export async function changeFont(allLayerDescriptors) {
     },
     toFont: {
       _obj: "fontSpec",
-      fontName: substituteFont,
-      fontStyleName: substituteFont
+      fontName: allFontsWithStyles[substituteFont]?.family || "Myriad Pro",  // Use family name for remapping because substituteFont is a postScriptName and passing style after it messess up the remapFonts call. PS needs family+style to find the correct font.
+      fontStyleName: allFontsWithStyles[substituteFont]?.style || "Regular"
     }
   }));
 

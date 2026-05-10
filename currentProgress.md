@@ -358,3 +358,64 @@ const FALLBACK_FONT = {
 **Revert:** `REPLACE_MISSING_FONTS = false` → all font logic is skipped, every layer uses `textItem.contents` as before.
 
 **Applied to both:** original `translateSmartObject` and `_translateSOContentsRecursive`.
+
+---
+
+## Session — May 10 2026 — Font change architecture refactored
+
+### Previous state: hardcoded `FALLBACK_FONT`
+
+The font replacement system used a hardcoded `FALLBACK_FONT` object (`{ fontName: "Ethnocentric", fontStyleName: "" }`) in `photoshop.js`. There was no UI to choose a substitute font — it was always Ethnocentric.
+
+### Current state: user-selectable substitute font via dropdown
+
+The hardcoded `FALLBACK_FONT` has been replaced with a **module-level `substituteFont` variable** in `fontManager.js`, set by the user through a dropdown in the UI.
+
+**Full data flow:**
+
+```
+UI (fontSelectorDropdown.jsx)
+  → user picks a font from <sp-picker>
+  → onFontChange callback fires in main.jsx
+  → calls setSubstituteFont(fontName) from fontManager.js
+  → sets module-level `substituteFont` variable
+
+Translation run (photoshop.js)
+  → translateSmartObject / _translateSOContentsRecursive
+  → STEP A: snapshot all layer descriptors (preRemapInfos)
+  → STEP B: calls changeFont(preRemapInfos) from fontManager.js
+    → changeFont scans descriptors for fontAvailable === false
+    → builds remapFonts batchPlay call mapping missing fonts → substituteFont
+    → if substituteFont is null, warns and returns false (no remap)
+  → STEP C: re-fetch descriptors (allInnerInfos) with updated font names
+  → STEP D: per layer — if font was missing, uses atomic batchPlay write with remapped font;
+            otherwise uses normal textItem.contents path
+```
+
+**Key files and their roles:**
+
+| File | Role |
+|------|------|
+| `fontManager.js` | Owns `substituteFont` state, exports `setSubstituteFont()`, `getAllFonts()`, `changeFont()` |
+| `photoshop.js` | Imports `changeFont`, calls it during translation with pre-remap descriptors. Still owns `REPLACE_MISSING_FONTS` flag and `layerHasMissingFont()` |
+| `fontSelectorDropdown.jsx` | Stateless UI — `<sp-picker>` dropdown listing all installed fonts |
+| `main.jsx` | Wires it together: state (`availableFonts`, `selectedFont`), passes props to dropdown, calls `setSubstituteFont` on change |
+| `LoadFDiskButton.jsx` | On file load, calls `getAllFonts()` and passes result up via `onFileLoaded` callback |
+
+**How fonts are loaded into the dropdown:**
+1. User clicks "Load File" → `LoadFDiskButton` calls `api.getAllFonts()`
+2. `getAllFonts()` reads `app.fonts`, extracts font names into a deduplicated sorted array
+3. Array is passed back to `main.jsx` via `onFileLoaded({parsedData, availableFonts})`
+4. `main.jsx` stores it in `availableFonts` state → passed as prop to `FontSelectorDropdown`
+
+**Current issues / rough edges:**
+
+1. **`fontStyleName` is set to `substituteFont` (the font name)** — in `changeFont()` line 108, the `toFont` entry sets both `fontName` and `fontStyleName` to the same `substituteFont` string. This may not be correct — `fontStyleName` should typically be a style like `"Regular"`, `"Bold"`, etc. Works for fonts with a single style but may fail for multi-style families.
+
+2. **`getAllFonts()` returns `font.name` (not `postScriptName` or `family`)** — the dropdown lists `font.name` values, and `setSubstituteFont` stores one of these. `changeFont()` then uses it as `fontName` in the `remapFonts` batchPlay call. This works if PS `remapFonts` accepts the `name` field, but PS batchPlay font APIs sometimes expect `postScriptName`. Needs verification that the remap actually applies correctly for all fonts.
+
+3. **Dead test function** — `changeFontToPanoptica()` at the bottom of `fontManager.js` (line 136) is a leftover test function, never exported or called.
+
+4. **`REPLACE_MISSING_FONTS` flag still lives in `photoshop.js`** — the gating logic is split: `photoshop.js` owns the flag and `layerHasMissingFont()`, while `fontManager.js` owns the remap logic. Could be consolidated.
+
+5. **No guard if user doesn't select a font** — if the user runs a translation without picking a font, `substituteFont` is `null`. `changeFont()` handles this (warns + returns false), but the atomic write path in `photoshop.js` still checks `fontWasMissing` and may attempt a write with the un-remapped (broken) font name.

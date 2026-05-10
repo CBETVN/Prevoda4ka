@@ -20,7 +20,7 @@ export const LoadFDiskButton = ({ onFileLoaded }) => {
       // console.log("Available fonts count:", availableFonts.length);
       // availableFonts.forEach(font => {console.log(font.family)});
 
-      console.log("Parsed data:", parsedData);
+      // console.log("Parsed data:", parsedData);
       // console.log("Available languages:", parsedData.availableLanguages);
       // console.log("Language data:", parsedData.languageData);
 

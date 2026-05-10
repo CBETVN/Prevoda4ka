@@ -33,6 +33,7 @@ export const App = () => {
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [availableFonts, setFonts] = useState([]);
+  const [count, setCount] = useState(0);
   const [selectedFont, setSelectedFont] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
