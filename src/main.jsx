@@ -15,7 +15,7 @@ import { GenerateSuggestionsButton } from "./components/GenerateSuggestionsButto
 import { TranslateSelectedTextField } from "./components/TranslateSelectedTextField";
 import { TranslateSelectedButton } from "./components/TranslateSelectedButton";
 import { GuessThePhrase } from "./components/GuessThePhrase";
-import { ValidateMasterFile } from "./components/ValidateMasterFile";
+import { ValidateMFButton } from "./components/ValidateMFButton";
 import * as validate from "./api/validateMasterFile";
 import * as pl from "./api/parsingLogic";
 import * as phraseGuesser from "./api/phraseGuesser";
@@ -202,7 +202,7 @@ export const App = () => {
           </div>
           <TranslateAllButton appState={appState} />
           {/* <GuessThePhrase onClick={handleGuessThePhrase} disabled={isProcessing || !selectedLanguage} /> */}
-          <ValidateMasterFile onClick={handleValidateMasterFile} disabled={isProcessing} />
+          <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing} />
           <div className="card">
             {/* <button onClick={async () => {
             // const activeLayer = app.activeDocument.activeLayers[0];

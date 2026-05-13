@@ -1,6 +1,6 @@
 import React from "react";
 
-export const ValidateMasterFile = ({ onClick, disabled }) => {
+export const ValidateMFButton = ({ onClick, disabled }) => {
   return (
     <sp-action-button onClick={onClick} disabled={disabled}>
       Validate Doc
