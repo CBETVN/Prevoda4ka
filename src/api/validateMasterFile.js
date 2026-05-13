@@ -263,13 +263,50 @@ const GENERIC_NAME_PATTERNS = [
 const COPY_SUFFIX_RE = /\s+copy(\s+\d+)?$/i;
 
 const KNOWN_STRUCTURAL_NAMES = new Set([
-  "EN","DE","HR","EL","IT","RO","PT","ES","MK","SQ","SR",
-  "UK","RU","TR","HU","CS","PT-BR","NL","DA","FR","PL",
-  "ZH-CN","SK","SL","SV","ET","KO","KA","LV","LT",
-  "BG","BACKGROUND","BASE","SLICES",
+"EN","BG",
+"FREE SPIN PORTRAIT",
+"FREE SPIN LANDSCAPE",
+"INTRO LANDSCAPE",
+"INTRO PORTRAIT",
+"RETRIGGER LANDSCAPE",
+"RETRIGGER PORTRAIT",
+"OUTRO CURRENCY LANDSCAPE",
+"OUTRO CURRENCY PORTRAIT",
+"OUTRO CREDITS LANDSCAPE",
+"OUTRO CREDITS PORTRAIT",
+"SUPERFREE SPINS COUNTER",
+"FREE SPINS COUNTER",
+"BUY BONUS BANNERS",
+"BANNER BACKGROUND 2 LANDSCAPE",
+"BANNER BACKGROUND 0 LANDSCAPE",
+"BANNER BACKGROUND 1 LANDSCAPE",
+"BANNER BACKGROUND 2 PORTRAIT",
+"BANNER BACKGROUND 0 PORTRAIT",
+"BANNER BACKGROUND 1 PORTRAIT",
+"DOUBLE CHANCE OFF LANDSCAPE",
+"BUY BONUS BTN",
+"POP UP TITLE",
+"BUY BONUS BTN",
+"BUY BONUS BTN ACTIVE 2 PORTRAIT",
+"BASE",
+"BUY BONUS BTN ACTIVE 0 PORTRAIT",
+"BUY BONUS BTN ACTIVE 1 PORTRAIT",
+"X2 BTN INACTIVE PORTRAIT",
+"BUY BONUS BTN PORTRAIT",
+"BG",
+"BASE (FIXED)",
+"BUY BONUS BTN PORTRAIT - EXPORT 50%",
+"SLICES"
 ]);
 
 const NAMING_WEIGHTS = { groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05 };
+
+const MATCH_SCORE = {
+  groups:       { both: 1.0, structural: 1.0, vocab: 0.7, named: 0.5 },
+  smartObjects: { both: 1.0, vocab: 1.0, structural: 0.7, named: 0.5 },
+  textLayers:   { both: 1.0, vocab: 1.0, structural: 0.7, named: 0.5 },
+  otherLayers:  { both: 1.0, vocab: 0.7, structural: 0.7, named: 0.5 },
+};
 
 function _isGenericName(name) {
   const stripped = name.replace(COPY_SUFFIX_RE, '').trim();
@@ -301,12 +338,19 @@ function _classifyLayerName(name, vocabulary) {
 
   if (GENERIC_NAME_PATTERNS.some(re => re.test(stripped))) return "generic";
 
-  if (vocabulary.lines.has(upper)) return "matched";
-  if (vocabulary.words.has(upper)) return "matched";
-  const nameWords = upper.split(/\s+/).filter(Boolean);
-  if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) return "matched";
+  let vocabMatch = false;
+  if (vocabulary.lines.has(upper)) vocabMatch = true;
+  else if (vocabulary.words.has(upper)) vocabMatch = true;
+  else {
+    const nameWords = upper.split(/\s+/).filter(Boolean);
+    if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) vocabMatch = true;
+  }
 
-  if (KNOWN_STRUCTURAL_NAMES.has(upper)) return "matched";
+  const structuralMatch = KNOWN_STRUCTURAL_NAMES.has(upper);
+
+  if (vocabMatch && structuralMatch) return "both";
+  if (vocabMatch) return "vocab";
+  if (structuralMatch) return "structural";
 
   return "named";
 }
@@ -314,25 +358,32 @@ function _classifyLayerName(name, vocabulary) {
 function _computeNamingFuzziness(layerMap, enPhrases) {
   const vocabulary = _buildVocabulary(enPhrases);
 
-  function scoreCategory(items) {
+  function scoreCategory(items, categoryKey) {
     const total = items.length;
     if (total === 0) return { score: 100, total: 0, matched: 0, named: 0, generic: [] };
-    let matched = 0, named = 0;
+    const weights = MATCH_SCORE[categoryKey];
+    let matched = 0, named = 0, weightedSum = 0;
     const generic = [];
     for (const item of items) {
       const cls = _classifyLayerName(item.layer.name, vocabulary);
-      if (cls === "matched") matched++;
-      else if (cls === "named") named++;
-      else generic.push(item.layer.name);
+      if (cls === "generic") {
+        generic.push(item.layer.name);
+      } else if (cls === "named") {
+        named++;
+        weightedSum += weights.named;
+      } else {
+        matched++;
+        weightedSum += weights[cls];
+      }
     }
-    const score = Math.round(((matched * 1.0 + named * 0.5) / total) * 100);
+    const score = Math.round((weightedSum / total) * 100);
     return { score, total, matched, named, generic };
   }
 
-  const groups       = scoreCategory(layerMap.groups);
-  const smartObjects = scoreCategory(layerMap.smartObjects);
-  const textLayers   = scoreCategory(layerMap.textLayers);
-  const otherLayers  = scoreCategory(layerMap.other);
+  const groups       = scoreCategory(layerMap.groups, "groups");
+  const smartObjects = scoreCategory(layerMap.smartObjects, "smartObjects");
+  const textLayers   = scoreCategory(layerMap.textLayers, "textLayers");
+  const otherLayers  = scoreCategory(layerMap.other, "otherLayers");
 
   let weightedSum = 0, weightTotal = 0;
   const entries = [

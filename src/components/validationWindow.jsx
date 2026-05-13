@@ -39,10 +39,7 @@ export const ValidationWindow = ({ dialog, results }) => {
         {allMissingFontNames.length > 0 ? (
           <>
             <sp-body>{allMissingFontNames.length} missing font(s):</sp-body>
-            <sp-table style={{ height: "300px" }} scroller="true">
-              <sp-table-head>
-                <sp-table-head-cell>Font Name</sp-table-head-cell>
-              </sp-table-head>
+            <sp-table class="missing-fonts-table" style={{ maxHeight: "300px" }} scroller="true">
               <sp-table-body>
                 {allMissingFontNames.map((name) => (
                   <sp-table-row key={name}>
@@ -76,12 +73,6 @@ export const ValidationWindow = ({ dialog, results }) => {
                         {cat.matched} matched, {cat.named} meaningful, {cat.generic.length} generic
                         {" "}(of {cat.total})
                       </sp-body>
-                      {cat.generic.length > 0 && (
-                        <sp-body class="fuzziness-generic">
-                          Generic: {cat.generic.slice(0, 10).join(', ')}
-                          {cat.generic.length > 10 ? ` (+${cat.generic.length - 10} more)` : ''}
-                        </sp-body>
-                      )}
                     </div>
                   ))}
               </div>

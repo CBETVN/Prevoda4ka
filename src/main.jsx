@@ -173,7 +173,7 @@ export const App = () => {
       const root = ReactDOM.createRoot(dialog);
       root.render(<ValidationWindow dialog={dialog} results={results} />);
       document.body.appendChild(dialog);
-      await dialog.uxpShowModal({ title: "Document Report", resize: "both", size: { width: 480, height: 400 } });
+      await dialog.uxpShowModal({ title: "Document Report", resize: "both", size: { width: 480, height: 700 } });
       root.unmount();
       dialog.remove();
     } catch (error) {
@@ -214,7 +214,7 @@ export const App = () => {
           </div>
           <TranslateAllButton appState={appState} />
           {/* <GuessThePhrase onClick={handleGuessThePhrase} disabled={isProcessing || !selectedLanguage} /> */}
-          <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing} />
+          <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
           <div className="card">
             {/* <button onClick={async () => {
             // const activeLayer = app.activeDocument.activeLayers[0];

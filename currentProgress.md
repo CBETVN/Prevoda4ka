@@ -445,3 +445,103 @@ Translation run (photoshop.js)
 4. **`REPLACE_MISSING_FONTS` flag still lives in `photoshop.js`** — the gating logic is split: `photoshop.js` owns the flag and `layerHasMissingFont()`, while `fontManager.js` owns the remap logic. Could be consolidated.
 
 5. **No guard if user doesn't select a font** — if the user runs a translation without picking a font, `substituteFont` is `null`. `changeFont()` handles this (warns + returns false), but the atomic write path in `photoshop.js` still checks `fontWasMissing` and may attempt a write with the un-remapped (broken) font name.
+
+---
+
+## Session — May 13 2026 — validateDoc() bulk refactor + fuzzy naming analysis
+
+### Benchmark results (individual vs bulk batchPlay)
+
+Two temporary test functions were added to `validateMasterFile.js` to compare approaches before committing to a refactor. Tested on a document with 227 Smart Object layers:
+
+| Approach | Time |
+|---|---|
+| Individual (227 separate batchPlay calls) | 120 ms |
+| Bulk (1 batchPlay with 227 descriptors) | 68 ms |
+
+Bulk is ~1.8x faster. Decision: refactor `validateDoc` to use bulk.
+
+### validateDoc() refactored — three-phase architecture ✅ DONE
+
+**Before:** `validateDoc()` made ~N + 2M individual batchPlay calls (N = SO layers for UUID fetching, M = all layers for `scanMainDocFonts`). For 227 SOs / 400 total layers ≈ 1027 calls.
+
+**After:** `validateDoc(appState)` makes **1 bulk batchPlay call** for all layer descriptors, then consumes the results in three phases:
+
+**Phase 1 — Upfront data collection:**
+- One `getAllLayers()` call → flat array of ALL layers (including invisible/locked)
+- One bulk batchPlay → all descriptors in one round-trip
+- Single loop categorizes into `layerMap { smartObjects, textLayers, groups, other }`
+- `buildNestedSOMapFast(buffer)` → binary PSD scan (unchanged)
+
+**Phase 2 — Validation checks (no additional batchPlay):**
+- **2a: Nested SOs** — SO UUIDs from `desc.smartObjectMore.ID` → deduplicate → look up in nestedSOMap
+- **2b: Missing fonts (main doc)** — text layer descriptors already contain `textKey.textStyleRange[].textStyle.fontPostScriptName` → diff against `app.fonts`. Replaces the old `scanMainDocFonts()` call (that function is left in the file untouched, just no longer invoked).
+- **2c: Missing fonts (SOs)** — deduplicated UUIDs → `extractFontsFromSO(buffer, uuid)` (binary scan, unchanged)
+
+**Phase 3 — Fuzzy naming analysis (new):**
+- `_computeNamingFuzziness(layerMap, enPhrases)` → per-category scores (0-100)
+- Only runs when `appState.languageData.EN` is available; otherwise returns `fuzziness: null`
+
+### Signature change
+
+`validateDoc()` → `validateDoc(appState = null)`. Called from `main.jsx` as `validate.validateDoc(appState)`. The `appState` parameter is optional — without it, nested SOs and missing fonts still work, only fuzzy analysis is skipped.
+
+### Fuzzy naming analysis ✅ DONE
+
+Scores how well the PSD's layer naming follows conventions. Requires XLSX data to be loaded.
+
+**Vocabulary** — built from two sources:
+1. **EN phrases (from XLSX)** — all lines from `languageData["EN"]`, normalized: strip `()` annotations (keep content), strip `[]` placeholders, split by `\n`, uppercase. Both whole lines ("FOR BONUS") and individual words ("FOR", "BONUS") in the vocabulary.
+2. **Hardcoded structural names** — language codes (EN, DE, HR, etc.) + BG, BACKGROUND, BASE, SLICES.
+
+**Layer classification** — each layer (after stripping "copy N" suffix):
+1. **Matched** — name is in the vocabulary (exact line, single word, multi-word all-in-vocab, or structural name)
+2. **Named** — not in vocabulary but NOT a Photoshop default (e.g. "freeSpinPortrait", "buyBonusBtn")
+3. **Generic** — matches Photoshop auto-generated default pattern (Group 1, Layer 1, Shape 1, Smart Object, Rectangle 2, adjustment layer defaults, fill layer defaults, etc.)
+
+**Scoring formula:** `score = round(((matched * 1.0 + named * 0.5) / total) * 100)`
+
+**Overall score** — weighted average of non-empty categories:
+- Groups: **40%** | Smart Objects: **50%** | Text Layers: **5%** | Other: **5%**
+
+**New private functions in validateMasterFile.js:**
+
+| Function | Purpose |
+|---|---|
+| `_isGenericName(name)` | Strips "copy N" suffix, tests against `GENERIC_NAME_PATTERNS` |
+| `_buildVocabulary(enPhrases)` | Builds `{ lines: Set, words: Set }` from EN phrase data |
+| `_classifyLayerName(name, vocabulary)` | Returns `"matched"` / `"named"` / `"generic"` |
+| `_computeNamingFuzziness(layerMap, enPhrases)` | Scores each category, returns weighted overall |
+
+**New constants:** `GENERIC_NAME_PATTERNS`, `COPY_SUFFIX_RE`, `KNOWN_STRUCTURAL_NAMES`, `NAMING_WEIGHTS`
+
+### Return structure (updated)
+
+```js
+{
+  nestedSOs: { found, count, layers },
+  missingFonts: { found, count, mainDoc, smartObjects },
+  fuzziness: {                          // null if XLSX not loaded
+    overallScore: 0-100,
+    groups:       { score, total, matched, named, generic: string[] },
+    smartObjects: { score, total, matched, named, generic: string[] },
+    textLayers:   { score, total, matched, named, generic: string[] },
+    otherLayers:  { score, total, matched, named, generic: string[] },
+  }
+}
+```
+
+### UI changes
+
+- **validationWindow.jsx** — added "NAMING QUALITY" section: overall score, per-category breakdown (score, matched/named/generic counts, sample generic names). Shows "Load XLSX data to see naming analysis" when no language data.
+- **validationWindow.css** — added styles for fuzziness breakdown, made the form scrollable (`overflow-y: auto`).
+- **main.jsx** — removed temporary benchmark calls (`benchmarkIndividualFetch`, `benchmarkBulkFetch`), passes `appState` to `validateDoc`. Dialog size increased to `{ width: 480, height: 700 }`.
+
+### Existing code left untouched
+`getNestedSOData()`, `buildNestedSOMapFast()`, `scanMainDocFonts()`, `extractFontsFromSO()`, all binary parsing helpers, benchmark functions (still in file, just not called).
+
+### What's still TODO
+- "Success prediction" bar (red to green gradient)
+- CSS polish and data visualization improvements for the naming quality section
+- Potential optimization: scan GALI once for all UUIDs instead of per-SO
+- Fix Text Shrinking on Edit

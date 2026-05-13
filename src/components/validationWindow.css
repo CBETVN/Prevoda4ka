@@ -1,5 +1,7 @@
 .validationWindow {
     padding: 16px;
+    overflow-y: auto;
+    max-height: 100%;
 }
 
 .validationWindow sp-heading {
@@ -79,6 +81,10 @@
     opacity: 0.6;
     display: block;
     font-style: italic;
+}
+
+.validationWindow .missing-fonts-table sp-table-cell {
+    color: #e34850;
 }
 
 .validationWindow sp-button-group {
