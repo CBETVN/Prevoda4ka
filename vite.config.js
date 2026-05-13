@@ -19,7 +19,7 @@ export default defineConfig({
     react(), 
   ],
   build: {
-    sourcemap: mode && ["dev", "build"].includes(mode) ? true : false,
+    sourcemap: true,
     minify: false,
     emptyOutDir: !shouldNotEmptyDir,
     rollupOptions: {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ReactDOM from "react-dom/client";
 
 import { uxp, photoshop} from "./globals";
 import { api } from "./api/api";
@@ -16,6 +17,7 @@ import { TranslateSelectedTextField } from "./components/TranslateSelectedTextFi
 import { TranslateSelectedButton } from "./components/TranslateSelectedButton";
 import { GuessThePhrase } from "./components/GuessThePhrase";
 import { ValidateMFButton } from "./components/ValidateMFButton";
+import { ValidationWindow } from "./components/validationWindow";
 import * as validate from "./api/validateMasterFile";
 import * as pl from "./api/parsingLogic";
 import * as phraseGuesser from "./api/phraseGuesser";
@@ -163,13 +165,23 @@ export const App = () => {
   const handleValidateMasterFile = async () => {
     try {
       setIsProcessing(true);
-      await validate.getNestedSOData();
+
+      const results = await validate.validateDoc(appState);
+      if (!results) return;
+
+      const dialog = document.createElement("dialog");
+      const root = ReactDOM.createRoot(dialog);
+      root.render(<ValidationWindow dialog={dialog} results={results} />);
+      document.body.appendChild(dialog);
+      await dialog.uxpShowModal({ title: "Document Report", resize: "both", size: { width: 480, height: 400 } });
+      root.unmount();
+      dialog.remove();
     } catch (error) {
       console.error("Error validating master file:", error);
     } finally {
       setIsProcessing(false);
     }
-    };
+  };
 
 
   return (

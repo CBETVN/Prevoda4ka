@@ -247,6 +247,111 @@ const NON_FONT_NAMES = new Set([
   'AdobeInvisFont', 'PhotoshopKinsokuHard', 'PhotoshopKinsokuSoft', 'Normal RGB'
 ]);
 
+// ── Fuzzy naming analysis constants ──────────────────────────────
+
+const GENERIC_NAME_PATTERNS = [
+  /^group\s+\d+$/i,
+  /^layer\s+\d+$/i,
+  /^shape\s+\d+$/i,
+  /^(smart\s*object)\s*\d*$/i,
+  /^(rectangle|ellipse|polygon|line)\s*\d*$/i,
+  /^(levels|curves|hue\/saturation|brightness\/contrast|color balance)\s*\d*$/i,
+  /^(path|mask|vector mask|clipping mask)\s*\d*$/i,
+  /^(fill|solid color|gradient|pattern)\s*\d*$/i,
+];
+
+const COPY_SUFFIX_RE = /\s+copy(\s+\d+)?$/i;
+
+const KNOWN_STRUCTURAL_NAMES = new Set([
+  "EN","DE","HR","EL","IT","RO","PT","ES","MK","SQ","SR",
+  "UK","RU","TR","HU","CS","PT-BR","NL","DA","FR","PL",
+  "ZH-CN","SK","SL","SV","ET","KO","KA","LV","LT",
+  "BG","BACKGROUND","BASE","SLICES",
+]);
+
+const NAMING_WEIGHTS = { groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05 };
+
+function _isGenericName(name) {
+  const stripped = name.replace(COPY_SUFFIX_RE, '').trim();
+  return GENERIC_NAME_PATTERNS.some(re => re.test(stripped));
+}
+
+function _buildVocabulary(enPhrases) {
+  const lines = new Set();
+  const words = new Set();
+  for (const phrase of enPhrases) {
+    const cleaned = phrase
+      .replace(/\(([^)]*)\)/g, "$1")
+      .replace(/\[.*?\]/g, "");
+    for (const line of cleaned.split("\n")) {
+      const trimmed = line.trim().toUpperCase();
+      if (!trimmed) continue;
+      lines.add(trimmed);
+      for (const word of trimmed.split(/\s+/)) {
+        if (word) words.add(word);
+      }
+    }
+  }
+  return { lines, words };
+}
+
+function _classifyLayerName(name, vocabulary) {
+  const stripped = name.replace(COPY_SUFFIX_RE, '').trim();
+  const upper = stripped.toUpperCase();
+
+  if (GENERIC_NAME_PATTERNS.some(re => re.test(stripped))) return "generic";
+
+  if (vocabulary.lines.has(upper)) return "matched";
+  if (vocabulary.words.has(upper)) return "matched";
+  const nameWords = upper.split(/\s+/).filter(Boolean);
+  if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) return "matched";
+
+  if (KNOWN_STRUCTURAL_NAMES.has(upper)) return "matched";
+
+  return "named";
+}
+
+function _computeNamingFuzziness(layerMap, enPhrases) {
+  const vocabulary = _buildVocabulary(enPhrases);
+
+  function scoreCategory(items) {
+    const total = items.length;
+    if (total === 0) return { score: 100, total: 0, matched: 0, named: 0, generic: [] };
+    let matched = 0, named = 0;
+    const generic = [];
+    for (const item of items) {
+      const cls = _classifyLayerName(item.layer.name, vocabulary);
+      if (cls === "matched") matched++;
+      else if (cls === "named") named++;
+      else generic.push(item.layer.name);
+    }
+    const score = Math.round(((matched * 1.0 + named * 0.5) / total) * 100);
+    return { score, total, matched, named, generic };
+  }
+
+  const groups       = scoreCategory(layerMap.groups);
+  const smartObjects = scoreCategory(layerMap.smartObjects);
+  const textLayers   = scoreCategory(layerMap.textLayers);
+  const otherLayers  = scoreCategory(layerMap.other);
+
+  let weightedSum = 0, weightTotal = 0;
+  const entries = [
+    [groups, NAMING_WEIGHTS.groups],
+    [smartObjects, NAMING_WEIGHTS.smartObjects],
+    [textLayers, NAMING_WEIGHTS.textLayers],
+    [otherLayers, NAMING_WEIGHTS.otherLayers],
+  ];
+  for (const [cat, weight] of entries) {
+    if (cat.total > 0) {
+      weightedSum += cat.score * weight;
+      weightTotal += weight;
+    }
+  }
+  const overallScore = weightTotal > 0 ? Math.round(weightedSum / weightTotal) : 100;
+
+  return { overallScore, groups, smartObjects, textLayers, otherLayers };
+}
+
 function decodePSString(bytes, start, end) {
   if (end - start >= 2 && bytes[start] === 0xFE && bytes[start + 1] === 0xFF) {
     let str = "";
@@ -508,10 +613,19 @@ async function scanMainDocFonts() {
 
 // ── Unified validate entry point ──────────────────────
 
-export async function validateDoc() {
+export async function validateDoc(appState = null) {
   const doc = app.activeDocument;
-  const emptyResult = { nestedSOs: { found: false, count: 0, layers: [] }, missingFonts: { found: false, count: 0, mainDoc: [], smartObjects: [] } };
+  const emptyResult = {
+    nestedSOs: { found: false, count: 0, layers: [] },
+    missingFonts: { found: false, count: 0, mainDoc: [], smartObjects: [] },
+    fuzziness: null,
+  };
   if (!doc) return emptyResult;
+
+  if (!doc.path) {
+    app.showAlert("You have to save your file before validating.");
+    return null;
+  }
 
   try {
     return await executeAsModal(async () => {
@@ -519,25 +633,81 @@ export async function validateDoc() {
       const entry = await fs.getEntryWithUrl(toUXPUrl(filePath));
       const buffer = await entry.read({ format: formats.binary });
 
-      // Nested SO detection
-      const nestedSOMap = buildNestedSOMapFast(buffer);
-      const allLayers = getAllLayers(doc.layers);
-      const nestedLayers = [];
+      // ── PHASE 1: Upfront data collection ─────────────────────────
 
-      const soLayers = [];
-      for (const layer of allLayers) {
-        if (layer.kind !== 'smartObject') continue;
-        const res = await batchPlay([{ _obj: 'get', _target: [{ _ref: 'layer', _id: layer.id }] }], {});
-        const uuid = res[0]?.smartObjectMore?.ID;
-        if (!uuid) continue;
-        soLayers.push({ name: layer.name, id: layer.id, uuid });
-        if (nestedSOMap[uuid]) {
-          nestedLayers.push({ name: layer.name, id: layer.id, uuid });
+      const nestedSOMap = buildNestedSOMapFast(buffer);
+
+      const allLayers = getAllLayers(doc.layers);
+
+      const allDescriptors = await batchPlay(
+        allLayers.map(l => ({
+          _obj: 'get',
+          _target: [{ _ref: 'layer', _id: l.id }],
+          _options: { dialogOptions: 'dontDisplay' }
+        })),
+        {}
+      );
+
+      const layerMap = {
+        all: allLayers,
+        smartObjects: [],
+        textLayers: [],
+        groups: [],
+        other: [],
+      };
+
+      for (let i = 0; i < allLayers.length; i++) {
+        const layer = allLayers[i];
+        const desc = allDescriptors[i];
+
+        if (layer.kind === 'smartObject') {
+          const uuid = desc?.smartObjectMore?.ID || null;
+          layerMap.smartObjects.push({ layer, descriptor: desc, uuid });
+        } else if (layer.kind === 'text') {
+          layerMap.textLayers.push({ layer, descriptor: desc });
+        } else if (layer.layers) {
+          layerMap.groups.push({ layer, descriptor: desc });
+        } else {
+          layerMap.other.push({ layer, descriptor: desc });
         }
       }
 
-      // Font detection — main document
-      const usedFonts = await scanMainDocFonts();
+      // ── PHASE 2a: Nested SO detection ───────────────────────────
+
+      const nestedLayers = [];
+      const soLayers = [];
+      const seenUuids = new Set();
+
+      for (const so of layerMap.smartObjects) {
+        if (!so.uuid || seenUuids.has(so.uuid)) continue;
+        seenUuids.add(so.uuid);
+        soLayers.push({ name: so.layer.name, id: so.layer.id, uuid: so.uuid });
+        if (nestedSOMap[so.uuid]) {
+          nestedLayers.push({ name: so.layer.name, id: so.layer.id, uuid: so.uuid });
+        }
+      }
+
+      // ── PHASE 2b: Font detection — main document ────────────────
+
+      const usedFonts = new Map();
+
+      for (const { layer, descriptor } of layerMap.textLayers) {
+        const tk = descriptor?.textKey;
+        if (!tk) continue;
+        const ranges = tk.textStyleRange || [];
+        for (const range of ranges) {
+          const ts = range.textStyle;
+          if (!ts) continue;
+          const psName = ts.fontPostScriptName;
+          if (!psName) continue;
+          if (!usedFonts.has(psName)) {
+            usedFonts.set(psName, { fontName: ts.fontName || psName, layers: [] });
+          }
+          const entry = usedFonts.get(psName);
+          if (!entry.layers.includes(layer.name)) entry.layers.push(layer.name);
+        }
+      }
+
       const installed = new Set();
       app.fonts.forEach(f => installed.add(f.postScriptName));
 
@@ -548,7 +718,8 @@ export async function validateDoc() {
         }
       }
 
-      // Font detection — inside Smart Objects
+      // ── PHASE 2c: Font detection — inside Smart Objects ──────────
+
       const missingSOs = [];
       for (const so of soLayers) {
         const fontLayers = extractFontsFromSO(buffer, so.uuid);
@@ -569,6 +740,13 @@ export async function validateDoc() {
         ...missingSOs.flatMap(s => s.fonts)
       ]);
 
+      // ── PHASE 3: Fuzzy naming analysis ──────────────────────────
+
+      const enPhrases = appState?.languageData?.["EN"];
+      const fuzziness = Array.isArray(enPhrases) && enPhrases.length > 0
+        ? _computeNamingFuzziness(layerMap, enPhrases)
+        : null;
+
       return {
         nestedSOs: {
           found: nestedLayers.length > 0,
@@ -580,11 +758,80 @@ export async function validateDoc() {
           count: allMissingNames.size,
           mainDoc: missingMainDoc,
           smartObjects: missingSOs
-        }
+        },
+        fuzziness,
       };
     }, { commandName: "Validate Document" });
   } catch (e) {
-    console.error("validateDoc error:", e.message, e.stack);
+    console.error("validateDoc error:", e);
     return emptyResult;
   }
+}
+
+
+// ── TEMPORARY BENCHMARK: individual vs bulk batchPlay ──────────────
+// Purpose: measure whether one bulk batchPlay call is faster than
+// N individual calls when fetching SO layer descriptors.
+// These are standalone test functions — they don't modify anything.
+// Wire them to temp buttons or call from console, then remove.
+
+// APPROACH A: One batchPlay call per SO layer, awaited in sequence.
+// This is what validateDoc currently does (line 536).
+// For 20 SO layers = 20 separate round-trips across the UXP bridge.
+export async function benchmarkIndividualFetch() {
+  const doc = app.activeDocument;
+  if (!doc) { console.log("[bench-individual] No active document"); return; }
+
+  // Get all layers from the DOM, keep only Smart Objects
+  const allLayers = getAllLayers(doc.layers);
+  const soLayers = allLayers.filter(l => l.kind === 'smartObject');
+  console.log(`[bench-individual] Found ${soLayers.length} SO layers. Starting individual fetch...`);
+
+  const t0 = Date.now();
+
+  // Loop: one batchPlay per layer, each awaited before the next
+  for (const layer of soLayers) {
+    const res = await batchPlay(
+      [{ _obj: 'get', _target: [{ _ref: 'layer', _id: layer.id }], _options: { dialogOptions: "dontDisplay" } }],
+      {}
+    );
+    // Access the UUID to simulate real usage (not just fetching and discarding)
+    const uuid = res[0]?.smartObjectMore?.ID;
+  }
+
+  const elapsed = Date.now() - t0;
+  console.log(`[bench-individual] DONE — ${soLayers.length} individual calls took ${elapsed}ms`);
+}
+
+// APPROACH B: All SO layers fetched in a single batchPlay call.
+// Packs N descriptors into one array, sends them in one round-trip.
+// For 20 SO layers = 1 bridge crossing returning 20 results.
+export async function benchmarkBulkFetch() {
+  const doc = app.activeDocument;
+  if (!doc) { console.log("[bench-bulk] No active document"); return; }
+
+  // Get all layers from the DOM, keep only Smart Objects
+  const allLayers = getAllLayers(doc.layers);
+  const soLayers = allLayers.filter(l => l.kind === 'smartObject');
+  console.log(`[bench-bulk] Found ${soLayers.length} SO layers. Starting bulk fetch...`);
+
+  const t0 = Date.now();
+
+  // Build one array of descriptors — one entry per SO layer — and send all at once
+  const results = await batchPlay(
+    soLayers.map(l => ({
+      _obj: 'get',
+      _target: [{ _ref: 'layer', _id: l.id }],
+      _options: { dialogOptions: "dontDisplay" }
+    })),
+    {}
+  );
+
+  // Loop through results in JS (microseconds — just array access)
+  for (let i = 0; i < results.length; i++) {
+    const uuid = results[i]?.smartObjectMore?.ID;
+  }
+
+  const elapsed = Date.now() - t0;
+  console.log(`[bench-bulk] DONE — 1 bulk call (${soLayers.length} descriptors) took ${elapsed}ms`);
 }
