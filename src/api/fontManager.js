@@ -25,17 +25,6 @@ let allFontsWithStyles = null;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 export async function getAllFonts() {
 
   

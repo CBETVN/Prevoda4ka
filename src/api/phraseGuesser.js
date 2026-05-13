@@ -64,7 +64,7 @@ export function guessThePhrase(layer, appState) {
 
   const translatedPhrase = parseRawPhrase(langEntries[bestIndex], "raw");
   if (!translatedPhrase) {
-    app.showAlert(`"${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translation is missing from the Excel file`);
+    console.log(`"${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translation is missing from the Excel file`);
     // console.log(`[guessThePhrase] "${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translatedPhrase is empty after parseRawPhrase("strict")`);
 
     return null;
