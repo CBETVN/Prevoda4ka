@@ -1,3 +1,29 @@
+### Visual Reference: Transform Scale Table
+
+#### 1. Transform scale (the main culprit)
+
+|                | YOU WIN | CONGRATULATIONS |
+|----------------|---------|-----------------|
+| `transform.xx` | 0.78    | 3.17        |
+| `transform.yy` | 1.32    | 3.15        |
+| `size`         | 100pt   | 19pt        |
+| `impliedFontSize` | 131.75pt | 59.87pt |
+
+"CONGRATULATIONS" was created at **19pt** then scaled up **~3x** via free transform in Photoshop. The `impliedFontSize` (59.87pt) is the visual result of `19 * 3.15`. When you programmatically set the text, Photoshop can reset or recalculate that transform matrix, causing it to render at its true 19pt base size — that's your shrink.
+
+
+
+
+"YOU WIN" has a large base size (100pt) with a modest transform, so there's much less to lose.
+## TODO: Fix Text Shrinking on Edit (Point Text Layers)
+
+- Issue: When editing point text layers with large transform matrices (e.g., scaled up via free transform), Photoshop resets the transform on text change, causing the text to shrink to its base size. This is compounded if the font is missing and substituted.
+  - Example: "CONGRATULATIONS" layer shrinks after edit because it was created at 19pt and scaled up ~3x; transform is lost on edit.
+  - "YOU WIN" layer uses a large base size and is less affected.
+- Paragraph text layers do not have this problem, as their size is defined by the bounding box and point size, not a transform matrix.
+- Workaround: Before editing text, save the transform matrix (textKey.transform), set the new text, then immediately reapply the transform via batchPlay.
+- Alternative: Flatten the size by multiplying the point size by the transform factor and resetting the transform, but this permanently changes the layer.
+- Action: Review and update text editing code to save/restore the transform matrix when editing point text layers to prevent unwanted shrinking.
 # Current Progress
 
 ## What we are building
