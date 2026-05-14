@@ -6,8 +6,9 @@
 }
 
 .data-status-indicator {
-  width: 150px;
-  height: 150px;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
   display: block;
 }
 

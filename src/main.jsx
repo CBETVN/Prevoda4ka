@@ -189,7 +189,7 @@ export const App = () => {
       {!webviewUI ? (
         <main>
 
-        <div className="group">
+        <div className="group-icon">
           <DataStatusIcon isActive={isDataLoaded} />
         </div>
 
