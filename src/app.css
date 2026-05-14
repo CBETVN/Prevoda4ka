@@ -262,11 +262,11 @@ button:focus-visible {
   position: absolute;
   top: -0.85em;
   left: 0;
-  background-color: #3e3e3e;
+  background-color: #3b3b3b;
   padding: 2px 10px;
   border-radius: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(151, 151, 151, 0.85);
 }
 
 /* row of buttons inside a group — always centered */

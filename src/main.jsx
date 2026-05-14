@@ -193,9 +193,9 @@ export const App = () => {
           <DataStatusIcon isActive={isDataLoaded} />
         </div>
 
-          {/* ── Group 1: Load & Configure ── */}
+          {/* ── Step 1: Load & Configure ── */}
           <div className="group">
-            <sp-label className="group-label">Group 1</sp-label>
+            <sp-label className="group-label">STEP 1</sp-label>
             <div className="group-button-row">
               <LoadFDiskButton onFileLoaded={handleFileLoaded} />
               <LoadFURLButton onFileLoaded={handleFileLoaded} />
@@ -218,17 +218,17 @@ export const App = () => {
             </div>
           </div>
 
-          {/* ── Group 2: Translate All ── */}
+          {/* ── Step 2: Translate All ── */}
           <div className="group">
-            <sp-label className="group-label">Group 2</sp-label>
+            <sp-label className="group-label">STEP 2</sp-label>
             <div className="group-button-row">
-              <TranslateAllButton appState={appState} />
+              <TranslateAllButton appState={appState} disabled={isProcessing || !isDataLoaded}/>
             </div>
           </div>
 
           {/* ── Group 3: Generate Suggestions ── */}
           <div className="group">
-            <sp-label className="group-label">Group 3</sp-label>
+            <sp-label className="group-label">OPTIONAL</sp-label>
             <div className="translate-selected-container">
               <div className="group-button-row">
                 <GenerateSuggestionsButton onClick={handleGenerate} disabled={isProcessing || !selectedLanguage} />
@@ -250,7 +250,7 @@ export const App = () => {
                   placeholder="Select a suggestion to translate..."
                   onChange={setTextfieldValue}
                 />
-                <TranslateSelectedButton appState={appState} label="Translate Selected" />
+                <TranslateSelectedButton appState={appState} disabled={isProcessing || !selectedLanguage} label="Translate Selected" />
               </div>
             </div>
           </div>
