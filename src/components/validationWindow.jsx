@@ -70,7 +70,7 @@ export const ValidationWindow = ({ dialog, results }) => {
                     <div key={label} className="fuzziness-category">
                       <sp-detail>{label}: {cat.score}/100</sp-detail>
                       <sp-body class="fuzziness-stats">
-                        {cat.matched} matched, {cat.named} meaningful, {cat.generic.length} generic
+                        {cat.phrase} phrase words, {cat.structural} structural, {cat.noise.length} noise
                         {" "}(of {cat.total})
                       </sp-body>
                     </div>

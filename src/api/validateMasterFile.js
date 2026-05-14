@@ -249,69 +249,52 @@ const NON_FONT_NAMES = new Set([
 
 // ── Fuzzy naming analysis constants ──────────────────────────────
 
-const GENERIC_NAME_PATTERNS = [
-  /^group\s+\d+$/i,
-  /^layer\s+\d+$/i,
-  /^shape\s+\d+$/i,
-  /^(smart\s*object)\s*\d*$/i,
-  /^(rectangle|ellipse|polygon|line)\s*\d*$/i,
-  /^(levels|curves|hue\/saturation|brightness\/contrast|color balance)\s*\d*$/i,
-  /^(path|mask|vector mask|clipping mask)\s*\d*$/i,
-  /^(fill|solid color|gradient|pattern)\s*\d*$/i,
-];
 
 const COPY_SUFFIX_RE = /\s+copy(\s+\d+)?$/i;
 
 const KNOWN_STRUCTURAL_NAMES = new Set([
 "EN","BG",
-"FREE SPIN PORTRAIT",
-"FREE SPIN LANDSCAPE",
-"INTRO LANDSCAPE",
-"INTRO PORTRAIT",
-"RETRIGGER LANDSCAPE",
-"RETRIGGER PORTRAIT",
-"OUTRO CURRENCY LANDSCAPE",
-"OUTRO CURRENCY PORTRAIT",
-"OUTRO CREDITS LANDSCAPE",
-"OUTRO CREDITS PORTRAIT",
-"SUPERFREE SPINS COUNTER",
-"FREE SPINS COUNTER",
-"BUY BONUS BANNERS",
-"BANNER BACKGROUND 2 LANDSCAPE",
-"BANNER BACKGROUND 0 LANDSCAPE",
-"BANNER BACKGROUND 1 LANDSCAPE",
-"BANNER BACKGROUND 2 PORTRAIT",
-"BANNER BACKGROUND 0 PORTRAIT",
-"BANNER BACKGROUND 1 PORTRAIT",
-"DOUBLE CHANCE OFF LANDSCAPE",
-"BUY BONUS BTN",
-"POP UP TITLE",
-"BUY BONUS BTN",
-"BUY BONUS BTN ACTIVE 2 PORTRAIT",
+"FREESPINPORTRAIT",
+"FREESPINLANDSCAPE",
+"INTROLANDSCAPE",
+"INTROPORTRAIT",
+"RETRIGGERLANDSCAPE",
+"RETRIGGERPORTRAIT",
+"OUTROCURRENCYLANDSCAPE",
+"OUTROCURRENCYPORTRAIT",
+"OUTROCREDITSLANDSCAPE",
+"OUTROCREDITSPORTRAIT",
+"SUPERFREESPINSCOUNTER",
+"FREESPINSCOUNTER",
+"BUYBONUSBANNERS",
+"BANNERBACKGROUND2LANDSCAPE",
+"BANNERBACKGROUND0LANDSCAPE",
+"BANNERBACKGROUND1LANDSCAPE",
+"BANNERBACKGROUND2PORTRAIT",
+"BANNERBACKGROUND0PORTRAIT",
+"BANNERBACKGROUND1PORTRAIT",
+"DOUBLECHANCEOFFLANDSCAPE",
+"BUYBONUSBTN",
+"POPUPTITLE",
+"BUYBONUSBTNACTIVE2PORTRAIT",
 "BASE",
-"BUY BONUS BTN ACTIVE 0 PORTRAIT",
-"BUY BONUS BTN ACTIVE 1 PORTRAIT",
-"X2 BTN INACTIVE PORTRAIT",
-"BUY BONUS BTN PORTRAIT",
-"BG",
-"BASE (FIXED)",
-"BUY BONUS BTN PORTRAIT - EXPORT 50%",
-"SLICES"
+"BUYBONUSBTNACTIVE0PORTRAIT",
+"BUYBONUSBTNACTIVE1PORTRAIT",
+"X2BTNINACTIVEPORTRAIT",
+"BUYBONUSBTNPORTRAIT",
+"BASE(FIXED)",
+"BUYBONUSBTNPORTRAIT",
+"SLICES","SLICE","BACKGROUND","BACKGROUNDS"
 ]);
 
 const NAMING_WEIGHTS = { groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05 };
 
 const MATCH_SCORE = {
-  groups:       { both: 1.0, structural: 1.0, vocab: 0.7, named: 0.5 },
-  smartObjects: { both: 1.0, vocab: 1.0, structural: 0.7, named: 0.5 },
-  textLayers:   { both: 1.0, vocab: 1.0, structural: 0.7, named: 0.5 },
-  otherLayers:  { both: 1.0, vocab: 0.7, structural: 0.7, named: 0.5 },
+  groups:       { both: 1.0, structural: 1.0, phrase: 0.7 },
+  smartObjects: { both: 1.0, phrase: 1.0, structural: 0.7 },
+  textLayers:   { both: 1.0, phrase: 1.0, structural: 0.7 },
+  otherLayers:  { both: 1.0, phrase: 0.7, structural: 0.7 },
 };
-
-function _isGenericName(name) {
-  const stripped = name.replace(COPY_SUFFIX_RE, '').trim();
-  return GENERIC_NAME_PATTERNS.some(re => re.test(stripped));
-}
 
 function _buildVocabulary(enPhrases) {
   const lines = new Set();
@@ -335,24 +318,23 @@ function _buildVocabulary(enPhrases) {
 function _classifyLayerName(name, vocabulary) {
   const stripped = name.replace(COPY_SUFFIX_RE, '').trim();
   const upper = stripped.toUpperCase();
+  const compact = upper.replace(/\s+/g, '');
 
-  if (GENERIC_NAME_PATTERNS.some(re => re.test(stripped))) return "generic";
-
-  let vocabMatch = false;
-  if (vocabulary.lines.has(upper)) vocabMatch = true;
-  else if (vocabulary.words.has(upper)) vocabMatch = true;
+  let phraseMatch = false;
+  if (vocabulary.lines.has(upper)) phraseMatch = true;
+  else if (vocabulary.words.has(upper)) phraseMatch = true;
   else {
     const nameWords = upper.split(/\s+/).filter(Boolean);
-    if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) vocabMatch = true;
+    if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) phraseMatch = true;
   }
 
-  const structuralMatch = KNOWN_STRUCTURAL_NAMES.has(upper);
+  const structuralMatch = KNOWN_STRUCTURAL_NAMES.has(compact);
 
-  if (vocabMatch && structuralMatch) return "both";
-  if (vocabMatch) return "vocab";
+  if (phraseMatch && structuralMatch) return "both";
+  if (phraseMatch) return "phrase";
   if (structuralMatch) return "structural";
 
-  return "named";
+  return "noise";
 }
 
 function _computeNamingFuzziness(layerMap, enPhrases) {
@@ -360,24 +342,37 @@ function _computeNamingFuzziness(layerMap, enPhrases) {
 
   function scoreCategory(items, categoryKey) {
     const total = items.length;
-    if (total === 0) return { score: 100, total: 0, matched: 0, named: 0, generic: [] };
+    if (total === 0) return { score: 100, total: 0, phrase: 0, structural: 0, noise: [] };
     const weights = MATCH_SCORE[categoryKey];
-    let matched = 0, named = 0, weightedSum = 0;
-    const generic = [];
+    let phrase = 0, structural = 0, weightedSum = 0;
+    const noise = [];
+    const _phraseNames = [], _structuralNames = [], _bothNames = []; // DELETE LATER
     for (const item of items) {
       const cls = _classifyLayerName(item.layer.name, vocabulary);
-      if (cls === "generic") {
-        generic.push(item.layer.name);
-      } else if (cls === "named") {
-        named++;
-        weightedSum += weights.named;
+      if (cls === "noise") {
+        noise.push(item.layer.name);
+      } else if (cls === "phrase") {
+        phrase++;
+        weightedSum += weights.phrase;
+        _phraseNames.push(item.layer.name); // DELETE LATER
+      } else if (cls === "structural") {
+        structural++;
+        weightedSum += weights.structural;
+        _structuralNames.push(item.layer.name); // DELETE LATER
       } else {
-        matched++;
-        weightedSum += weights[cls];
+        phrase++;
+        structural++;
+        weightedSum += weights.both;
+        _bothNames.push(item.layer.name); // DELETE LATER
       }
     }
+    // DELETE LATER
+    console.log(`[${categoryKey}] Phrase words: [${_phraseNames.join(", ")}]`);
+    console.log(`[${categoryKey}] Structural: [${_structuralNames.join(", ")}]`);
+    if (_bothNames.length) console.log(`[${categoryKey}] Both: [${_bothNames.join(", ")}]`);
+    console.log(`[${categoryKey}] Noise: [${noise.join(", ")}]`);
     const score = Math.round((weightedSum / total) * 100);
-    return { score, total, matched, named, generic };
+    return { score, total, phrase, structural, noise };
   }
 
   const groups       = scoreCategory(layerMap.groups, "groups");
