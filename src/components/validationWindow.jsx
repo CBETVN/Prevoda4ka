@@ -9,7 +9,7 @@ const CATEGORY_LABELS = [
 ];
 
 export const ValidationWindow = ({ dialog, results }) => {
-  const { nestedSOs, missingFonts, fuzziness } = results || {};
+  const { nestedSOs, missingFonts, missingLinks, fuzziness } = results || {};
 
   const allMissingFontNames = missingFonts?.found
     ? [...new Set([
@@ -26,7 +26,7 @@ export const ValidationWindow = ({ dialog, results }) => {
       <div className="section">
         <sp-detail>NESTED SMART OBJECTS</sp-detail>
         {nestedSOs?.found ? (
-          <sp-body>Found {nestedSOs.count} Smart Object(s) with nested SOs.</sp-body>
+          <sp-body>Found {nestedSOs.count} unique Smart Object(s) with nested SOs.</sp-body>
         ) : (
           <sp-body class="success">No nested Smart Objects found.</sp-body>
         )}
@@ -51,6 +51,25 @@ export const ValidationWindow = ({ dialog, results }) => {
           </>
         ) : (
           <sp-body class="success">All fonts are installed.</sp-body>
+        )}
+      </div>
+
+      <sp-divider size="small"></sp-divider>
+
+      <div className="section">
+        <sp-detail>MISSING LINKS</sp-detail>
+        {missingLinks?.found ? (
+          <>
+            <sp-body>{missingLinks.count} Smart Object(s) with broken linked files:</sp-body>
+            {missingLinks.samples.map((name) => (
+              <sp-body key={name}> • {name}</sp-body>
+            ))}
+            {missingLinks.count > 3 && (
+              <sp-body class="muted">...and {missingLinks.count - 3} more</sp-body>
+            )}
+          </>
+        ) : (
+          <sp-body class="success">No missing linked Smart Objects found.</sp-body>
         )}
       </div>
 

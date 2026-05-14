@@ -17,6 +17,7 @@ import { TranslateSelectedTextField } from "./components/TranslateSelectedTextFi
 import { TranslateSelectedButton } from "./components/TranslateSelectedButton";
 import { GuessThePhrase } from "./components/GuessThePhrase";
 import { ValidateMFButton } from "./components/ValidateMFButton";
+import {ResetButton} from "./components/ResetButton";
 import { ValidationWindow } from "./components/validationWindow";
 import * as validate from "./api/validateMasterFile";
 import * as pl from "./api/parsingLogic";
@@ -200,6 +201,7 @@ export const App = () => {
               <LoadFDiskButton onFileLoaded={handleFileLoaded} />
               <LoadFURLButton onFileLoaded={handleFileLoaded} />
               <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
+              <ResetButton onClick={() => location.reload()} />
             </div>
             <div className="group-dropdowns">
               <LanguageSelectorDropdown

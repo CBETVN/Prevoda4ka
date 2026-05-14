@@ -283,9 +283,20 @@ const KNOWN_STRUCTURAL_NAMES = new Set([
 "X2BTNINACTIVEPORTRAIT",
 "BUYBONUSBTNPORTRAIT",
 "BASE(FIXED)",
-"BUYBONUSBTNPORTRAIT",
-"SLICES","SLICE","BACKGROUND","BACKGROUNDS"
+"SLICES","SLICE","BACKGROUND","BACKGROUNDS",
+"FREESPIN",
+"INTRO",
+"RETRIGGER",
+"OUTROCURRENCY",
+"OUTROCREDITS",
+"INSTRUCTIONS",
+"BUYBONUSBANNER",
+"BANNERBACKGROUND",
+"DOUBLECHANCEOFF",
+"X2BTNINACTIVE",
 ]);
+
+const STRUCTURAL_SUBSTRING_MIN_LEN = 4;
 
 const NAMING_WEIGHTS = { groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05 };
 
@@ -328,7 +339,15 @@ function _classifyLayerName(name, vocabulary) {
     if (nameWords.length > 1 && nameWords.every(w => vocabulary.words.has(w))) phraseMatch = true;
   }
 
-  const structuralMatch = KNOWN_STRUCTURAL_NAMES.has(compact);
+  let structuralMatch = KNOWN_STRUCTURAL_NAMES.has(compact);
+  if (!structuralMatch) {
+    for (const name of KNOWN_STRUCTURAL_NAMES) {
+      if (name.length >= STRUCTURAL_SUBSTRING_MIN_LEN && compact.includes(name)) {
+        structuralMatch = true;
+        break;
+      }
+    }
+  }
 
   if (phraseMatch && structuralMatch) return "both";
   if (phraseMatch) return "phrase";
@@ -533,6 +552,216 @@ function extractFontsFromLiFD(bytes, view, recStart, recEnd) {
   }
 }
 
+// Checks if an embedded SO contains linked external SOs (SoLE layers) inside it.
+// Scans RECURSIVELY — if the SO contains nested embedded SOs, those are checked too.
+// Entry point: navigates outer PSD buffer → GALI → lnk2 → liFD (by UUID) to find
+// the target SO's inner PSB, then hands off to _scanPsbForLinkedLayers for recursive descent.
+// Returns an array of layer names that are linked external SOs (empty = none found).
+// Pure read-only: only reads bytes from the already-loaded buffer, no Photoshop API calls.
+function findLinkedLayersInSO(buffer, targetUuid) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  if (buffer.byteLength < 30) return [];
+  const isPsb = bytes[4] === 0x00 && bytes[5] === 0x02;
+
+  // Jump through PSD sections to reach GALI (same navigation as extractFontsFromSO)
+  const colorModeLen = view.getUint32(26, false);
+  const imgResOffset = 26 + 4 + colorModeLen;
+  if (imgResOffset + 4 > buffer.byteLength) return [];
+  const imgResLen = view.getUint32(imgResOffset, false);
+  const layerMaskOffset = imgResOffset + 4 + imgResLen;
+  if (layerMaskOffset + (isPsb ? 8 : 4) > buffer.byteLength) return [];
+
+  const layerMaskLen = isPsb
+    ? view.getUint32(layerMaskOffset, false) * 0x100000000 + view.getUint32(layerMaskOffset + 4, false)
+    : view.getUint32(layerMaskOffset, false);
+  const layerMaskStart = layerMaskOffset + (isPsb ? 8 : 4);
+  const layerMaskEnd = layerMaskStart + layerMaskLen;
+
+  // Skip Layer Info section
+  let pos = layerMaskStart;
+  if (pos + (isPsb ? 8 : 4) > buffer.byteLength) return [];
+  const layerInfoLen = isPsb
+    ? view.getUint32(pos, false) * 0x100000000 + view.getUint32(pos + 4, false)
+    : view.getUint32(pos, false);
+  pos += (isPsb ? 8 : 4) + layerInfoLen;
+  if (pos % 2 !== 0) pos++;
+
+  // Skip Global Layer Mask
+  if (pos + 4 > buffer.byteLength) return [];
+  const globalMaskLen = view.getUint32(pos, false);
+  pos += 4 + globalMaskLen;
+
+  // Now at GALI — scan for lnk2/lnkD/lnk3 blocks (contain embedded SO data)
+  const galiStart = pos;
+  const galiEnd = Math.min(layerMaskEnd, buffer.byteLength);
+
+  for (let i = galiStart; i < galiEnd - 12; i++) {
+    // Look for '8BIM' or '8B64' signature
+    if (bytes[i] !== 0x38 || bytes[i + 1] !== 0x42) continue;
+    const is8B64 = bytes[i + 2] === 0x36 && bytes[i + 3] === 0x34;
+    const is8BIM = bytes[i + 2] === 0x49 && bytes[i + 3] === 0x4D;
+    if (!is8BIM && !is8B64) continue;
+    // Check for 'lnk' key prefix (lnk2, lnkD, lnk3)
+    if (bytes[i + 4] !== 0x6C || bytes[i + 5] !== 0x6E || bytes[i + 6] !== 0x6B) continue;
+    const b7 = bytes[i + 7];
+    if (b7 !== 0x32 && b7 !== 0x44 && b7 !== 0x33) continue;
+
+    const useLarge = is8B64 || isPsb;
+    const blockLen = useLarge
+      ? view.getUint32(i + 8, false) * 0x100000000 + view.getUint32(i + 12, false)
+      : view.getUint32(i + 8, false);
+    if (blockLen === 0) continue;
+
+    const blockStart = i + (useLarge ? 16 : 12);
+    const blockEnd = Math.min(blockStart + blockLen, galiEnd);
+
+    // Scan for liFD records — each one is an embedded SO's data
+    for (let j = blockStart; j < blockEnd - 8; j++) {
+      // 'liFD' = 6C 69 46 44
+      if (bytes[j] !== 0x6c || bytes[j + 1] !== 0x69 || bytes[j + 2] !== 0x46 || bytes[j + 3] !== 0x44) continue;
+      if (j < 4) continue;
+      const recLen = view.getUint32(j - 4, false);
+      const recStart = j - 4;
+      const recEnd = Math.min(recStart + 4 + recLen, blockEnd);
+      const recUuid = extractUuidFromBlock(buffer, j, recEnd);
+
+      // Found the liFD record for our target SO — extract its inner PSB and scan recursively
+      if (recUuid === targetUuid) {
+        const visited = new Set([targetUuid]);
+        return _extractAndScanForLinks(buffer, recStart, recEnd, visited);
+      }
+      j = recEnd - 1;
+    }
+    i = blockStart + blockLen - 1;
+  }
+
+  return [];
+}
+
+// Extracts the inner PSB from a liFD record and hands it to the recursive scanner.
+// Finds the 8BPS header (with version validation to skip false positives in filenames),
+// slices the inner PSB buffer, and calls _scanPsbForLinkedLayers.
+function _extractAndScanForLinks(buffer, recStart, recEnd, visited) {
+  const bytes = new Uint8Array(buffer);
+
+  // Find the embedded PSD/PSB header (8BPS + valid version 1 or 2)
+  let bpsOff = -1;
+  for (let i = recStart; i < recEnd - 6; i++) {
+    if (bytes[i] === 0x38 && bytes[i+1] === 0x42 && bytes[i+2] === 0x50 && bytes[i+3] === 0x53) {
+      const ver = (bytes[i + 4] << 8) | bytes[i + 5];
+      if (ver === 1 || ver === 2) { bpsOff = i; break; }
+    }
+  }
+  if (bpsOff < 0) return [];
+
+  try {
+    // Slice the inner PSB — starts at 8BPS header, ends at liFD record boundary
+    const innerBuffer = buffer.slice(bpsOff, recEnd);
+    return _scanPsbForLinkedLayers(innerBuffer, visited);
+  } catch (e) {
+    return [];
+  }
+}
+
+// Core recursive scanner. Given a PSB buffer:
+//   1. Parses layers with parsePsd() — collects SoLE (linked external) layer names
+//   2. Navigates this PSB's own GALI → lnk2 → liFD records (nested embedded SOs)
+//   3. For each nested SO not yet visited, extracts its inner PSB and recurses
+// The visited Set prevents infinite loops if the same SO appears at multiple nesting levels.
+function _scanPsbForLinkedLayers(psbBuffer, visited) {
+  const names = [];
+
+  // ── Step 1: Parse layers, collect any SoLE (linked external SO) names ──
+  let parsed;
+  try {
+    parsed = parsePsd(psbBuffer);
+  } catch (e) {
+    return names;
+  }
+  for (const layer of parsed.layers) {
+    if (layer.additionalInfo.includes("SoLE")) {
+      names.push(layer.name);
+    }
+  }
+
+  // ── Step 2: Navigate this PSB's GALI to find nested embedded SOs ──
+  // Same section-skipping logic: header → color mode → image resources →
+  // layer/mask info → skip layer info → skip global mask → arrive at GALI
+  if (psbBuffer.byteLength < 30) return names;
+  const bytes = new Uint8Array(psbBuffer);
+  const view = new DataView(psbBuffer instanceof ArrayBuffer ? psbBuffer : psbBuffer.buffer);
+  const isPsb = bytes[4] === 0x00 && bytes[5] === 0x02;
+
+  const colorModeLen = view.getUint32(26, false);
+  const imgResOffset = 26 + 4 + colorModeLen;
+  if (imgResOffset + 4 > psbBuffer.byteLength) return names;
+  const imgResLen = view.getUint32(imgResOffset, false);
+  const layerMaskOffset = imgResOffset + 4 + imgResLen;
+  if (layerMaskOffset + (isPsb ? 8 : 4) > psbBuffer.byteLength) return names;
+
+  const layerMaskLen = isPsb
+    ? view.getUint32(layerMaskOffset, false) * 0x100000000 + view.getUint32(layerMaskOffset + 4, false)
+    : view.getUint32(layerMaskOffset, false);
+  const layerMaskStart = layerMaskOffset + (isPsb ? 8 : 4);
+  const layerMaskEnd = Math.min(layerMaskStart + layerMaskLen, psbBuffer.byteLength);
+
+  let pos = layerMaskStart;
+  if (pos + (isPsb ? 8 : 4) > psbBuffer.byteLength) return names;
+  const layerInfoLen = isPsb
+    ? view.getUint32(pos, false) * 0x100000000 + view.getUint32(pos + 4, false)
+    : view.getUint32(pos, false);
+  pos += (isPsb ? 8 : 4) + layerInfoLen;
+  if (pos % 2 !== 0) pos++;
+
+  if (pos + 4 > psbBuffer.byteLength) return names;
+  const globalMaskLen = view.getUint32(pos, false);
+  pos += 4 + globalMaskLen;
+
+  const galiStart = pos;
+  const galiEnd = Math.min(layerMaskEnd, psbBuffer.byteLength);
+
+  // ── Step 3: Scan GALI for lnk2 blocks → liFD records → recurse into each ──
+  for (let i = galiStart; i < galiEnd - 12; i++) {
+    if (bytes[i] !== 0x38 || bytes[i + 1] !== 0x42) continue;
+    const is8B64 = bytes[i + 2] === 0x36 && bytes[i + 3] === 0x34;
+    const is8BIM = bytes[i + 2] === 0x49 && bytes[i + 3] === 0x4D;
+    if (!is8BIM && !is8B64) continue;
+    if (bytes[i + 4] !== 0x6C || bytes[i + 5] !== 0x6E || bytes[i + 6] !== 0x6B) continue;
+    const b7 = bytes[i + 7];
+    if (b7 !== 0x32 && b7 !== 0x44 && b7 !== 0x33) continue;
+
+    const useLarge = is8B64 || isPsb;
+    const blockLen = useLarge
+      ? view.getUint32(i + 8, false) * 0x100000000 + view.getUint32(i + 12, false)
+      : view.getUint32(i + 8, false);
+    if (blockLen === 0) continue;
+
+    const blockStart = i + (useLarge ? 16 : 12);
+    const blockEnd = Math.min(blockStart + blockLen, galiEnd);
+
+    // Each liFD record is a nested embedded SO — recurse into it
+    for (let j = blockStart; j < blockEnd - 8; j++) {
+      if (bytes[j] !== 0x6c || bytes[j + 1] !== 0x69 || bytes[j + 2] !== 0x46 || bytes[j + 3] !== 0x44) continue;
+      if (j < 4) continue;
+      const recLen = view.getUint32(j - 4, false);
+      const recStart = j - 4;
+      const recEnd = Math.min(recStart + 4 + recLen, blockEnd);
+      const recUuid = extractUuidFromBlock(psbBuffer, j, recEnd);
+
+      // Only recurse into SOs we haven't visited yet (prevents infinite loops)
+      if (recUuid && !visited.has(recUuid)) {
+        visited.add(recUuid);
+        names.push(..._extractAndScanForLinks(psbBuffer, recStart, recEnd, visited));
+      }
+      j = recEnd - 1;
+    }
+    i = blockStart + blockLen - 1;
+  }
+
+  return names;
+}
+
 function extractFontsFromSO(buffer, targetUuid) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -664,6 +893,7 @@ export async function validateDoc(appState = null) {
   const emptyResult = {
     nestedSOs: { found: false, count: 0, layers: [] },
     missingFonts: { found: false, count: 0, mainDoc: [], smartObjects: [] },
+    missingLinks: { found: false, count: 0, samples: [] },
     fuzziness: null,
   };
   if (!doc) return emptyResult;
@@ -786,6 +1016,36 @@ export async function validateDoc(appState = null) {
         ...missingSOs.flatMap(s => s.fonts)
       ]);
 
+      // ── PHASE 2d: Missing linked SOs ─────────────────────────────
+      // Linked SOs reference external files. If those files are missing,
+      // translation will fail when Photoshop tries to open them.
+
+      // Top-level: batchPlay descriptors already tell us if a link is broken
+      // (smartObject.linkMissing is a runtime property Photoshop sets automatically)
+      const missingLinkSamples = [];
+      const seenMissingRefs = new Set();
+      for (const so of layerMap.smartObjects) {
+        const sm = so.descriptor?.smartObject;
+        if (sm?.linked && sm?.linkMissing) {
+          // Deduplicate by fileReference (multiple instances can point to same missing file)
+          const ref = sm.fileReference || so.layer.name;
+          if (!seenMissingRefs.has(ref)) {
+            seenMissingRefs.add(ref);
+            missingLinkSamples.push(so.layer.name);
+          }
+        }
+      }
+
+      // Nested: scan inside each unique embedded SO for SoLE layers.
+      // SoLE = linked external SO inside an embedded SO — these almost always
+      // have broken paths because the file reference is machine-specific.
+      for (const so of soLayers) {
+        const linkedNames = findLinkedLayersInSO(buffer, so.uuid);
+        if (linkedNames.length > 0 && !missingLinkSamples.includes(so.name)) {
+          missingLinkSamples.push(so.name);
+        }
+      }
+
       // ── PHASE 3: Fuzzy naming analysis ──────────────────────────
 
       const enPhrases = appState?.languageData?.["EN"];
@@ -804,6 +1064,11 @@ export async function validateDoc(appState = null) {
           count: allMissingNames.size,
           mainDoc: missingMainDoc,
           smartObjects: missingSOs
+        },
+        missingLinks: {
+          found: missingLinkSamples.length > 0,
+          count: missingLinkSamples.length,
+          samples: missingLinkSamples.slice(0, 3),  // show at most 3 in the report
         },
         fuzziness,
       };

@@ -541,6 +541,10 @@ Scores how well the PSD's layer naming follows conventions. Requires XLSX data t
 `getNestedSOData()`, `buildNestedSOMapFast()`, `scanMainDocFonts()`, `extractFontsFromSO()`, all binary parsing helpers, benchmark functions (still in file, just not called).
 
 ### What's still TODO
+- Noise detection polish. It rules out as noise names like:
+Buy Bonus Btn Export 50%, buyBonusBtnActive2Portrait - EXPORT 50%, buyBonusBtnActive0Portrait - EXPORT 50%, buyBonusBtnActive1Portrait - EXPORT 50%, x2BtnInactivePortrait - EXPORT 50%, buyBonusBtnPortrait - EXPORT 50%, Buy Bonus Btn Export 50%, buyBonusBtnActive2Portrait - EXPORT 50%, buyBonusBtnActive0Portrait - EXPORT 50%, buyBonusBtnActive1Portrait - EXPORT 50%, x2BtnInactivePortrait - EXPORT 50%, buyBonusBtnPortrait - EXPORT 50%, buyBonusBanner, intro, Retrigger, Outro Currency, Outro Credits , Instructions
+"Export 50%" is pretty standart -  we have to tell it somehow to ignore this pattern (valid structural name + some instructions)
+
 - "Success prediction" bar (red to green gradient)
 - CSS polish and data visualization improvements for the naming quality section
 - Potential optimization: scan GALI once for all UUIDs instead of per-SO
