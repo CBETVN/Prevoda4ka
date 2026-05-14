@@ -189,47 +189,52 @@ export const App = () => {
       {!webviewUI ? (
         <main>
 
+        <div className="group">
           <DataStatusIcon isActive={isDataLoaded} />
+        </div>
 
-          <LoadFDiskButton onFileLoaded={handleFileLoaded} />
-          <LoadFURLButton onFileLoaded={handleFileLoaded} />
-          <div className="card">
-
-            <LanguageSelectorDropdown
-            availableLanguages={availableLanguages}
-            selectedLanguage={selectedLanguage}
-            onLanguageChange={setSelectedLanguage}
-          />
+          {/* ── Group 1: Load & Configure ── */}
+          <div className="group">
+            <sp-label className="group-label">Group 1</sp-label>
+            <div className="group-button-row">
+              <LoadFDiskButton onFileLoaded={handleFileLoaded} />
+              <LoadFURLButton onFileLoaded={handleFileLoaded} />
+              <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
+            </div>
+            <div className="group-dropdowns">
+              <LanguageSelectorDropdown
+                availableLanguages={availableLanguages}
+                selectedLanguage={selectedLanguage}
+                onLanguageChange={setSelectedLanguage}
+              />
+              <FontSelectorDropdown
+                availableFonts={availableFonts}
+                selectedFont={selectedFont}
+                onFontChange={(font) => {
+                  setSelectedFont(font);
+                  setSubstituteFont(font);
+                }}
+              />
+            </div>
           </div>
-                    <div className="card">
 
-            <FontSelectorDropdown
-            availableFonts={availableFonts}
-            selectedFont={selectedFont}
-            onFontChange={(font) => {
-            setSelectedFont(font);
-            setSubstituteFont(font);
-            }}
-          />
+          {/* ── Group 2: Translate All ── */}
+          <div className="group">
+            <sp-label className="group-label">Group 2</sp-label>
+            <div className="group-button-row">
+              <TranslateAllButton appState={appState} />
+            </div>
           </div>
-          <TranslateAllButton appState={appState} />
-          {/* <GuessThePhrase onClick={handleGuessThePhrase} disabled={isProcessing || !selectedLanguage} /> */}
-          <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
-          <div className="card">
-            {/* <button onClick={async () => {
-            // const activeLayer = app.activeDocument.activeLayers[0];
-            const info = await pl.translateSelectedLayer(appState);
-            }}>Translate Selected
-          </button> */}
-          {/* <button onClick={increment}>Count is {count}</button> */}
-          {/* <button onClick={() => updateSuggestion(1, "Updated Suggestion!")}>
-              Update First Suggestion
-          </button> */}
-          <div className="translate-selected-container">
-            <GenerateSuggestionsButton onClick={handleGenerate} disabled={isProcessing || !selectedLanguage} />
-            <div className="phrase-reference-container">
-              <SuggestionsContainer 
-                maxHeight="200px"
+
+          {/* ── Group 3: Generate Suggestions ── */}
+          <div className="group">
+            <sp-label className="group-label">Group 3</sp-label>
+            <div className="translate-selected-container">
+              <div className="group-button-row">
+                <GenerateSuggestionsButton onClick={handleGenerate} disabled={isProcessing || !selectedLanguage} />
+              </div>
+              <SuggestionsContainer
+                maxHeight="160px"
                 suggestions={suggestions}
                 selectedId={selectedId}
                 onSelect={(id) => {
@@ -239,18 +244,15 @@ export const App = () => {
                 onGenerate={handleGenerate}
                 isProcessing={isProcessing}
               />
-              <TranslateSelectedTextField
-                value={textfieldValue}
-                placeholder="Select a suggestion to translate..."
-                onChange={setTextfieldValue}
-              />
-              <TranslateSelectedButton appState={appState} label="Translate Selected" />
-              {/* <PhraseReference/> */}
+              <div className="group-button-row">
+                <TranslateSelectedTextField
+                  value={textfieldValue}
+                  placeholder="Select a suggestion to translate..."
+                  onChange={setTextfieldValue}
+                />
+                <TranslateSelectedButton appState={appState} label="Translate Selected" />
+              </div>
             </div>
-            {/* <button onClick={() => api.getParentFolder(app.activeDocument.activeLayers[0])}>parent folder?</button> */}
-          </div>
-          {/* <button onClick={findLayersPosition}>Complex Alert</button> */}
-
           </div>
         </main>
       ) : (
