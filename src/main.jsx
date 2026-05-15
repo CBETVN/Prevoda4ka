@@ -77,7 +77,7 @@ export const App = () => {
     setAvailableLanguages(parsedData.availableLanguages);
     setIsDataLoaded(true);
     setFonts(availableFonts);
-    console.log("handleFileLoaded: availableFonts:", availableFonts);
+    // console.log("handleFileLoaded: availableFonts:", availableFonts);
     // Don't auto-select - let user choose
   };
 

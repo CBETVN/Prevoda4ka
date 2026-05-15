@@ -30,7 +30,7 @@ export async function getAllFonts() {
   
 
     const allFontsArray = app.fonts.map(font => ({name: font.name, postScriptName: font.postScriptName,family: font.family, style: font.style}));
-    console.log("All fonts from allFontsMap:", allFontsArray);
+    // console.log("All fonts from allFontsMap:", allFontsArray);
     //turns an array of font objects into a map keyed by font name, with values containing postScriptName, family, and style
     allFontsWithStyles = Object.fromEntries(allFontsArray.map(({name, ...rest}) => [name, rest]));
     console.log("All fonts with styles:", allFontsWithStyles);

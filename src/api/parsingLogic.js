@@ -49,6 +49,42 @@ function normalizeForMatch(str) {
 }
 
 
+
+
+// async function isDocumentValidForTranslation() {
+//   const doc = app.activeDocument;
+//   if (!doc) { console.log('No active document.'); return null; }
+
+//   try {
+//         const res = await batchPlay([
+//           { _obj: 'get', _target: [{ _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' }] }
+//         ], {});
+//         const info = res[0];
+//         const extension = info?.extension;
+//         // console.log(`Document info : ${info}`);
+//         console.log('Document extension:', extension[0]);
+//         return extension;
+//       } catch (e) {
+//     console.error('isDocumentValidForTranslation error:', e);
+//     return null;
+//   }
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Scans all visible layers in the active document and identifies unique Smart Objects
  * and matching EN folder names for translation.
@@ -72,6 +108,7 @@ function normalizeForMatch(str) {
 export async function translateAll(appState) {
   const startTime = Date.now();
 
+  // isDocumentValidForTranslation();
   // Clear the set of processed layer IDs at the start of each full translation run
   processedIds.clear();
 
@@ -84,11 +121,11 @@ export async function translateAll(appState) {
     return;
   }
   const allEnglishWords = getAllEnglishwords(appState);
-  console.log("All English words for matching:", allEnglishWords);
+  // console.log("All English words for matching:", allEnglishWords);
   allVisibleLayers = ps.getAllVisibleLayers(app.activeDocument.layers);
   const allSOs = allVisibleLayers.filter(layer => layer.kind === constants.LayerKind.SMARTOBJECT);
   smartObjectsForProcessing = await ps.purgeSOInstancesFromArray(allSOs);
-  console.log(`Found ${smartObjectsForProcessing.length} smart objects `, smartObjectsForProcessing.map(l => l.name));
+  // console.log(`Found ${smartObjectsForProcessing.length} smart objects `, smartObjectsForProcessing.map(l => l.name));
 
 
 

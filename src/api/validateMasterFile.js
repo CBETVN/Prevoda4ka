@@ -117,12 +117,16 @@ function buildNestedSOMapFast(buffer) {
   const galiStart = pos;
   const galiEnd = Math.min(layerMaskEnd, buffer.byteLength);
 
-  console.log(`Skipped to GALI at offset ${galiStart}, scanning ${galiEnd - galiStart} bytes (${Math.round((galiEnd-galiStart)/buffer.byteLength*100)}% of file)`);
+  // console.log(`Skipped to GALI at offset ${galiStart}, scanning ${galiEnd - galiStart} bytes (${Math.round((galiEnd-galiStart)/buffer.byteLength*100)}% of file)`);
+  // console.log(`[DIAG] buffer.byteLength=${buffer.byteLength}, galiStart=${galiStart}, galiEnd=${galiEnd}`);
+  // console.log(`[DIAG] first 16 bytes at GALI: ${Array.from(bytes.slice(galiStart, galiStart + 16)).map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
 
   const tScan = Date.now();
+  let sigCount = 0;
   for (let i = galiStart; i < galiEnd - 12; i++) {
     // '8B' prefix check first (fast reject)
     if (bytes[i] !== 0x38 || bytes[i+1] !== 0x42) continue;
+    sigCount++;
     const is8B64 = bytes[i+2] === 0x36 && bytes[i+3] === 0x34;
     const is8BIM = bytes[i+2] === 0x49 && bytes[i+3] === 0x4D;
     if (!is8BIM && !is8B64) continue;
@@ -142,6 +146,7 @@ function buildNestedSOMapFast(buffer) {
 
     // Scan for liFD signatures directly — robust against padding/alignment quirks
     let nRec = 0;
+    let nullUuids = 0, dupUuids = 0, newUuids = 0;
     for (let j = blockStart; j < blockEnd - 8; j++) {
       // 'liFD' = 6C 69 46 44
       if (bytes[j] !== 0x6c || bytes[j+1] !== 0x69 || bytes[j+2] !== 0x46 || bytes[j+3] !== 0x44) continue;
@@ -151,14 +156,19 @@ function buildNestedSOMapFast(buffer) {
       const recStart = j - 4;
       const recEnd = Math.min(recStart + 4 + recLen, blockEnd);
       const uuid = extractUuidFromBlock(buffer, j, recEnd);
+      if (!uuid) { nullUuids++; }
+      else if (uuid in map) { dupUuids++; }
+      else { newUuids++; }
       if (uuid && !(uuid in map)) {
         map[uuid] = liFDRecordHasNestedSO(bytes, view, recStart, recEnd);
       }
       j = recEnd - 1; // skip to end of record
     }
-    console.log(`nestedSOMapFast: ${nRec} records scanned in ${Date.now()-tScan}ms`);
+    // console.log(`[DIAG] liFD breakdown: ${newUuids} new, ${dupUuids} duplicate, ${nullUuids} null UUIDs`);
+    // console.log(`nestedSOMapFast: ${nRec} records scanned in ${Date.now()-tScan}ms`);
     i = blockStart + blockLen - 1;
   }
+  // console.log(`[DIAG] scan done: sigCount=${sigCount}, lnk blocks found=${Object.keys(map).length}`);
   return map;
 }
 
@@ -293,7 +303,15 @@ const KNOWN_STRUCTURAL_NAMES = new Set([
 "BUYBONUSBANNER",
 "BANNERBACKGROUND",
 "DOUBLECHANCEOFF",
-"X2BTNINACTIVE",
+"X2BTNINACTIVE","PORTRAIT",
+"OUTROSPLASHCREDITSPORTRAIT",
+"OUTROSPLASHCURRENCYPORTRAIT",
+"LANDSCAPE", "OUTROSPLASHCREDITSLANDSCAPE",
+"OUTROSPLASHCURRENCYLANDSCAPE",
+"PORTRAIT", "OUTROSPLASHCREDITSPORTRAIT",
+"OUTROSPLASHCURRENCYPORTRAIT", "LANDSCAPE",
+"OUTROSPLASHCREDITSLANDSCAPE", "OUTROSPLASHCURRENCYLANDSCAPE",
+"UIELEMENTS"
 ]);
 
 const STRUCTURAL_SUBSTRING_MIN_LEN = 4;
@@ -388,8 +406,8 @@ function _computeNamingFuzziness(layerMap, enPhrases) {
     // DELETE LATER
     // console.log(`[${categoryKey}] Phrase words: [${_phraseNames.join(", ")}]`);
     // console.log(`[${categoryKey}] Structural: [${_structuralNames.join(", ")}]`);
-    if (_bothNames.length) console.log(`[${categoryKey}] Both: [${_bothNames.join(", ")}]`);
-    console.log(`[${categoryKey}] Noise: [${noise.join(", ")}]`);
+    // if (_bothNames.length) console.log(`[${categoryKey}] Both: [${_bothNames.join(", ")}]`);
+    // console.log(`[${categoryKey}] Noise: [${noise.join(", ")}]`);
     const score = Math.round((weightedSum / total) * 100);
     return { score, total, phrase, structural, noise };
   }
@@ -963,6 +981,14 @@ export async function validateDoc(appState = null) {
         if (nestedSOMap[so.uuid]) {
           nestedLayers.push({ name: so.layer.name, id: so.layer.id, uuid: so.uuid });
         }
+      }
+
+      const binaryUuids = Object.keys(nestedSOMap);
+      const domUuids = [...seenUuids];
+      const overlap = domUuids.filter(u => u in nestedSOMap).length;
+      console.log(`[DIAG-2a] DOM UUIDs: ${domUuids.length}, binary UUIDs: ${binaryUuids.length}, overlap: ${overlap}`);
+      if (domUuids.length > 0 && binaryUuids.length > 0 && overlap === 0) {
+        console.log(`[DIAG-2a] MISMATCH! sample DOM: "${domUuids[0]}", sample binary: "${binaryUuids[0]}"`);
       }
 
       // ── PHASE 2b: Font detection — main document ────────────────

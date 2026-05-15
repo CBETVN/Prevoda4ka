@@ -540,12 +540,44 @@ Scores how well the PSD's layer naming follows conventions. Requires XLSX data t
 ### Existing code left untouched
 `getNestedSOData()`, `buildNestedSOMapFast()`, `scanMainDocFonts()`, `extractFontsFromSO()`, all binary parsing helpers, benchmark functions (still in file, just not called).
 
+---
+
+## Session — May 15 2026 — Validation returns wrong results after revert / SO edit
+
+### BUG — Validation reports 0 nested SOs after F12 revert ⚠️ CONFIRMED — fix deferred
+
+**Symptom:** When opening a doc, validation correctly reports nested SOs (e.g. 60). After making edits and pressing F12 (Revert), re-running validation shows 0 nested SOs. Also reproduces when editing a single SO — count drops by 1 (e.g. 60 → 59).
+
+**Root cause — confirmed via diagnostic logging (May 15 2026):**
+
+Photoshop regenerates `smartObjectMore.ID` (UUID) for every Smart Object on revert. The file on disk is unchanged — the binary lnk2/liFD records still contain the original UUIDs. But the live DOM (batchPlay descriptors) reports completely new UUIDs.
+
+`validateDoc()` builds `nestedSOMap` from the binary (old UUIDs) and reads `smartObjectMore.ID` from the DOM (new UUIDs). After revert, zero overlap → zero nested SOs detected.
+
+**Diagnostic evidence:**
+```
+Before revert: DOM UUIDs: 71, binary UUIDs: 71, overlap: 71
+After revert:  DOM UUIDs: 71, binary UUIDs: 71, overlap: 0
+
+sample DOM:    "4113eb1c-248d-994b-976d-1588007f9269"
+sample binary: "db5eff6f-4b96-b344-8bf6-cb28d935e58e"
+```
+
+Binary parsing is correct (same buffer, same 71 liFD records, same byte content). The mismatch is purely in Photoshop's in-memory UUID regeneration.
+
+**Same mechanism explains the "edit one SO → count drops by 1" bug:** editing an SO regenerates only that SO's UUID, breaking just that one match.
+
+**Fix options (for future):**
+1. **Count from binary only** — `Object.values(nestedSOMap).filter(v => v).length` gives correct count without DOM matching. Loses layer-name detail but count is always right. Simplest fix.
+2. **Match by name** — compare DOM layer names against info extracted from binary liFD records. Names aren't guaranteed unique.
+3. **Full binary layer parsing** — read per-layer UUIDs from the PSD layer records (`SoLd` descriptor), which always match lnk2 UUIDs. Most work.
+
+**Diagnostic logs** are still in `buildNestedSOMapFast` and Phase 2a (`[DIAG]` and `[DIAG-2a]` prefixed). Remove when fixing.
+
+---
+
 ### What's still TODO
-- Noise detection polish. It rules out as noise names like:
-Buy Bonus Btn Export 50%, buyBonusBtnActive2Portrait - EXPORT 50%, buyBonusBtnActive0Portrait - EXPORT 50%, buyBonusBtnActive1Portrait - EXPORT 50%, x2BtnInactivePortrait - EXPORT 50%, buyBonusBtnPortrait - EXPORT 50%, Buy Bonus Btn Export 50%, buyBonusBtnActive2Portrait - EXPORT 50%, buyBonusBtnActive0Portrait - EXPORT 50%, buyBonusBtnActive1Portrait - EXPORT 50%, x2BtnInactivePortrait - EXPORT 50%, buyBonusBtnPortrait - EXPORT 50%, buyBonusBanner, intro, Retrigger, Outro Currency, Outro Credits , Instructions
-"Export 50%" is pretty standart -  we have to tell it somehow to ignore this pattern (valid structural name + some instructions)
 
 - "Success prediction" bar (red to green gradient)
-- CSS polish and data visualization improvements for the naming quality section
 - Potential optimization: scan GALI once for all UUIDs instead of per-SO
 - Fix Text Shrinking on Edit
