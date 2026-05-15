@@ -241,20 +241,23 @@ The matching pipeline (`matchLayersToLines`) uses a confidence ladder:
 
 The last matched layer absorbs any remaining translation lines (handles translator expansion where one EN line becomes multiple translated lines). Layers beyond the available translation slots get `null` (left untouched).
 
-### Do-Not-Translate Markers
+### Bracket Rules in EN Phrases
 
-Lines in the EN phrase wrapped entirely in `()` mark layers that must not be translated:
+**`()` — Do-Not-Translate markers.** When an **entire** EN line is wrapped in parentheses (e.g. `(SUPER)`), the layer **is matched** and **consumes a positional slot**, but is **not translated** — it keeps its original text. The parentheses are stripped for layer-name matching (`(SUPER)` → `SUPER`).
+
+**`[]` — Dismissed entirely.** Square-bracket placeholders like `[Number]` or `[Multiplier]` are stripped and **do not count as a line**. They consume no slot and produce no layer match.
 
 ```
-EN: "SUPER (do not translate!)\nFREE SPINS\n[NUMBER] OF [NUMBER]"
+EN phrase: "(X2)\nCHANCE\nFOR BONUS\n[Number]"
 
-📁 superFreeSpins/
-  🔲 SUPER          ← in () in the EN phrase → skipped, keeps original text
-  🔲 FREE SPINS     ← translated
-  🔲 [NUMBER]...    ← translated
+After parsing:
+  Slot 0: X2         ← from (X2), matched to layer but NOT translated
+  Slot 1: CHANCE     ← translated
+  Slot 2: FOR BONUS  ← translated
+  [Number]           ← stripped, not a slot, no layer match
 ```
 
-`buildDoNotTranslateSet(rawEnPhrase)` extracts these markers. Skipped layers still consume their positional slot so subsequent layers receive the correct translation line.
+`buildDoNotTranslateSet(rawEnPhrase)` extracts the `()` markers. Skipped layers still consume their positional slot so subsequent layers receive the correct translation line. Square-bracket stripping happens in `getTranslatableLayers` and `parseRawPhrase`.
 
 ### Folder / Group Names
 
