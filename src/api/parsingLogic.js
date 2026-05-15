@@ -51,24 +51,34 @@ function normalizeForMatch(str) {
 
 
 
-// async function isDocumentValidForTranslation() {
-//   const doc = app.activeDocument;
-//   if (!doc) { console.log('No active document.'); return null; }
+async function isDocumentValidForTranslation() {
+  const doc = app.activeDocument;
+  if (!doc) { console.log('No active document.'); return false; }
 
-//   try {
-//         const res = await batchPlay([
-//           { _obj: 'get', _target: [{ _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' }] }
-//         ], {});
-//         const info = res[0];
-//         const extension = info?.extension;
-//         // console.log(`Document info : ${info}`);
-//         console.log('Document extension:', extension[0]);
-//         return extension;
-//       } catch (e) {
-//     console.error('isDocumentValidForTranslation error:', e);
-//     return null;
-//   }
-// }
+  try {
+    const res = await batchPlay([
+      { _obj: 'get', _target: [{ _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' }] }
+    ], {});
+    const fmt = res[0]?.extension?.[0]?.toUpperCase();
+    if (fmt !== "PSD" && fmt !== "PSB") {
+      app.showAlert("Only PSD/PSB documents are supported.");
+      return false;
+    }
+  } catch (e) {
+    console.error('isDocumentValidForTranslation error:', e);
+    return false;
+  }
+
+  const layers = ps.getAllVisibleLayers(doc.layers);
+  const hasSOs = layers.some(l => l.kind === constants.LayerKind.SMARTOBJECT);
+  const hasGroups = layers.some(l => l.kind === constants.LayerKind.GROUP);
+  if (!hasSOs || !hasGroups) {
+    app.showAlert("This doesn't look like a master file for translation.");
+    return false;
+  }
+
+  return true;
+}
 
 
 
@@ -108,9 +118,10 @@ function normalizeForMatch(str) {
 export async function translateAll(appState) {
   const startTime = Date.now();
 
-  // isDocumentValidForTranslation();
-  // Clear the set of processed layer IDs at the start of each full translation run
   processedIds.clear();
+
+  const isValid = await executeAsModal(async () => isDocumentValidForTranslation(), { commandName: "Check document format" });
+  if (!isValid) return;
 
   if (!appState.selectedLanguage) {
     app.showAlert("Please select a language first");
