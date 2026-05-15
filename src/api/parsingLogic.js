@@ -126,12 +126,18 @@ export async function translateAll(appState) {
   const allEnglishWords = getAllEnglishwords(appState);
   // console.log("All English words for matching:", allEnglishWords);
   allVisibleLayers = ps.getAllVisibleLayers(app.activeDocument.layers);
+
+  // Quick check to see if this document has any chance of being a master file for translation
+  //  — it must have at least one SO and one folder.
+  // This saves us from doing a full scan of all layers in documents that are clearly not set up for translation.
   const hasSOs = allVisibleLayers.some(l => l.kind === constants.LayerKind.SMARTOBJECT);
   const hasGroups = allVisibleLayers.some(l => l.kind === constants.LayerKind.GROUP);
   if (!hasSOs || !hasGroups) {
     app.showAlert("This doesn't look like a master file for translation.");
     return;
   }
+
+
   const allSOs = allVisibleLayers.filter(layer => layer.kind === constants.LayerKind.SMARTOBJECT);
   smartObjectsForProcessing = await ps.purgeSOInstancesFromArray(allSOs);
   // console.log(`Found ${smartObjectsForProcessing.length} smart objects `, smartObjectsForProcessing.map(l => l.name));
