@@ -28,10 +28,10 @@ const manifest = {
       label: {
         default: name,
       },
-      minimumSize: { width: 230, height: 200 },
+      minimumSize: { width: 540, height: 840 },
       maximumSize: { width: 2000, height: 2000 },
-      preferredDockedSize: { width: 230, height: 300 },
-      preferredFloatingSize: { width: 450, height: 400 },
+      preferredDockedSize: { width: 540, height: 840 },
+      preferredFloatingSize: { width: 540, height: 840 },
       icons: [
         {
           width: 23,

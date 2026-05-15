@@ -26,7 +26,15 @@ export const ValidationWindow = ({ dialog, results }) => {
       <div className="section">
         <sp-detail>NESTED SMART OBJECTS</sp-detail>
         {nestedSOs?.found ? (
-          <sp-body>Found {nestedSOs.count} unique Smart Object(s) with nested SOs.</sp-body>
+          <>
+            <sp-body class="error">{nestedSOs.count} Smart Object(s) with nested SOs:</sp-body>
+            {nestedSOs.layers.slice(0, 3).map((l) => (
+              <sp-body key={l.id}> • {l.name}</sp-body>
+            ))}
+            {nestedSOs.count > 3 && (
+              <sp-body class="muted">...and {nestedSOs.count - 3} more</sp-body>
+            )}
+          </>
         ) : (
           <sp-body class="success">No nested Smart Objects found.</sp-body>
         )}
@@ -60,7 +68,7 @@ export const ValidationWindow = ({ dialog, results }) => {
         <sp-detail>MISSING LINKS</sp-detail>
         {missingLinks?.found ? (
           <>
-            <sp-body>{missingLinks.count} Smart Object(s) with broken linked files:</sp-body>
+            <sp-body class="error">{missingLinks.count} Smart Object(s) with broken linked files:</sp-body>
             {missingLinks.samples.map((name) => (
               <sp-body key={name}> • {name}</sp-body>
             ))}

@@ -249,3 +249,66 @@ When checking linked SOs at the **document level** (not binary), batchPlay retur
 ### Performance
 
 Full recursive scan (doc-level batchPlay + binary descent through 3 nesting levels) completes in ~10-45ms. No SO opening required.
+
+---
+
+## Production Implementation: `findLinkedLayersInSO` (validateMasterFile.js)
+
+### Overview
+
+The missing-link detection was integrated into `validateDoc()` as **Phase 2d**. It uses a three-function recursive architecture that operates entirely on the already-loaded binary buffer — no additional file I/O or Photoshop API calls.
+
+### Architecture — Three Functions
+
+```
+findLinkedLayersInSO(buffer, targetUuid)        ← entry point
+  │
+  │  Navigates outer PSD's GALI → lnk2 → liFD to find the target SO by UUID.
+  │  Creates a visited Set, then hands off to:
+  │
+  └→ _extractAndScanForLinks(buffer, recStart, recEnd, visited)
+       │
+       │  Finds the 8BPS header inside the liFD record (with version validation).
+       │  Slices the inner PSB buffer. Hands off to:
+       │
+       └→ _scanPsbForLinkedLayers(psbBuffer, visited)
+            │
+            │  Step 1: parsePsd(psbBuffer) → collects SoLE layer names
+            │  Step 2: Navigates this PSB's own GALI → lnk2 → liFD records
+            │  Step 3: For each liFD with a new UUID → calls _extractAndScanForLinks
+            │          (which calls back here — this is the recursive loop)
+            │
+            └→ Returns accumulated SoLE layer names from all nesting levels
+```
+
+### How Recursion Works
+
+`_scanPsbForLinkedLayers` is the recursive core. After collecting SoLE names from the current level, it navigates the PSB's own GALI section to find nested embedded SOs (liFD records). For each one not already in the `visited` Set, it calls `_extractAndScanForLinks`, which slices the deeper inner PSB and calls `_scanPsbForLinkedLayers` again — going one level deeper.
+
+The `visited` Set (keyed on UUID) prevents infinite loops. Photoshop's layer structure is finite, so recursion naturally bottoms out when there are no more liFD records to descend into.
+
+### Integration in validateDoc() — Phase 2d
+
+Two checks run in sequence:
+
+1. **Top-level linked SOs** — the bulk batchPlay descriptors from Phase 1 already contain `smartObject.linked` and `smartObject.linkMissing` (runtime properties set by Photoshop). Just loop and filter — no binary parsing needed.
+
+2. **Nested linked SOs** — for each unique SO in `soLayers` (already deduplicated by UUID in Phase 2a), call `findLinkedLayersInSO(buffer, uuid)`. The presence of SoLE layers inside an embedded SO is the signal — linked files inside SOs are almost always broken when PSDs are shared between machines.
+
+Results are capped at 3 sample names for the UI report.
+
+### Return Structure
+
+```js
+missingLinks: {
+  found: boolean,       // true if any missing links detected
+  count: number,        // total unique SOs with missing links
+  samples: string[],    // up to 3 layer names for the report
+}
+```
+
+### Key Design Decisions
+
+- **No file path extraction** — the presence of SoLE inside an embedded SO is enough to flag it. Path extraction and existence checking add complexity for minimal benefit in the validation report context.
+- **Reuses existing infrastructure** — `parsePsd()` already detects SoLE blocks. The GALI navigation follows the same pattern as `extractFontsFromSO`. No existing functions were modified.
+- **Pure read-only** — all three functions operate on byte arrays already in memory. No batchPlay, no executeAsModal, no document mutations. Cannot affect Photoshop state.

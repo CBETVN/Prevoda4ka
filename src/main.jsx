@@ -163,6 +163,7 @@ export const App = () => {
   };
 
 
+
   const handleValidateMasterFile = async () => {
     try {
       setIsProcessing(true);
@@ -174,7 +175,7 @@ export const App = () => {
       const root = ReactDOM.createRoot(dialog);
       root.render(<ValidationWindow dialog={dialog} results={results} />);
       document.body.appendChild(dialog);
-      await dialog.uxpShowModal({ title: "Document Report", resize: "both", size: { width: 480, height: 700 } });
+      await dialog.uxpShowModal({ title: "Document Report", resize: "both", size: { width: 480, height: 800 } });
       root.unmount();
       dialog.remove();
     } catch (error) {

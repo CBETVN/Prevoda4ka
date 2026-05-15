@@ -386,8 +386,8 @@ function _computeNamingFuzziness(layerMap, enPhrases) {
       }
     }
     // DELETE LATER
-    console.log(`[${categoryKey}] Phrase words: [${_phraseNames.join(", ")}]`);
-    console.log(`[${categoryKey}] Structural: [${_structuralNames.join(", ")}]`);
+    // console.log(`[${categoryKey}] Phrase words: [${_phraseNames.join(", ")}]`);
+    // console.log(`[${categoryKey}] Structural: [${_structuralNames.join(", ")}]`);
     if (_bothNames.length) console.log(`[${categoryKey}] Both: [${_bothNames.join(", ")}]`);
     console.log(`[${categoryKey}] Noise: [${noise.join(", ")}]`);
     const score = Math.round((weightedSum / total) * 100);
@@ -889,22 +889,24 @@ async function scanMainDocFonts() {
 // ── Unified validate entry point ──────────────────────
 
 export async function validateDoc(appState = null) {
-  const doc = app.activeDocument;
   const emptyResult = {
     nestedSOs: { found: false, count: 0, layers: [] },
     missingFonts: { found: false, count: 0, mainDoc: [], smartObjects: [] },
     missingLinks: { found: false, count: 0, samples: [] },
     fuzziness: null,
   };
-  if (!doc) return emptyResult;
 
-  if (!doc.path) {
+  if (!app.activeDocument) return emptyResult;
+
+  if (!app.activeDocument.path) {
     app.showAlert("You have to save your file before validating.");
     return null;
   }
 
   try {
     return await executeAsModal(async () => {
+      const doc = app.activeDocument;
+      console.log(`validateDoc: doc="${doc.name}", layers=${getAllLayers(doc.layers).length}`);
       const filePath = doc.path;
       const entry = await fs.getEntryWithUrl(toUXPUrl(filePath));
       const buffer = await entry.read({ format: formats.binary });
