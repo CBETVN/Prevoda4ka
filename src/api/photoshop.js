@@ -615,6 +615,14 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
     const parentDocId = app.activeDocument.id;
     console.log(`[SO-edit] about to open: "${nestedSO.name}" id=${nestedSO.id} in doc="${app.activeDocument.name}"`);
 
+    // Select the layer by ID before opening — prevents Photoshop from
+    // resolving the wrong layer when duplicate names exist at the same level.
+    await batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "layer", _id: nestedSO.id }],
+      _options: { dialogOptions: "silent" }
+    }], { synchronousExecution: true });
+
     await editSmartObject(nestedSO);
 
     // Guard: SO failed to open

@@ -48,7 +48,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--text-color-secondary, #999);
+  color: var(--text-color-secondary, #6a6a6a);
   font-style: italic;
 }
 
