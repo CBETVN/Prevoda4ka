@@ -405,19 +405,8 @@ Every layer name is classified as:
 
 The result is a score from 0 to 100. Smart Object names are weighted most heavily (50%) since they're the primary translation targets. A high score means the PSD is well-prepared for translation; a low score suggests layer names may need cleanup in the PSD.
 
----
 
-## Structural Gotchas from Real PSDs
 
-- **Double SO instances**: the same linked SO often appears twice in a folder (one directly, one inside a sub-group). They share `smartObjectMore.ID`. `purgeSOInstancesFromArray` deduplicates before the loop; `processedIds` prevents re-translation when the same container is matched again from a sibling SO.
-- **Intermediate wrapper groups**: SO/text layers are commonly nested under unnamed sub-groups (`Group 3`, `Surface`, `txt only`). `_collectVocabNames` recurses through these transparently.
-- **Partial translations**: many EN phrases have empty cells for some languages. `parseExcelFile` stores `""` — `phraseGuesser` rejects empty translated phrases and leaves the layer untouched.
-- **Locked layers**: `translateSmartObject` checks for locked state before entering edit mode and skips silently (locked SO would trigger "command unavailable").
-- **Invisible layers**: excluded at collection time — if a language group (e.g. the `BG` group) is hidden, it is skipped entirely.
-- **Nested Smart Objects**: the recursive translation path opens nested SOs depth-first. A layer count safeguard prevents runaway processing on very complex SOs.
-- **Missing fonts**: `textItem.contents` permanently destroys remapped fonts. The atomic batchPlay write path avoids this. Font remap must happen BEFORE any text writes.
-
----
 
 ## Known Issues / WIP Areas
 
@@ -428,12 +417,3 @@ The result is a score from 0 to 100. Smart Object names are weighted most heavil
 
 ---
 
-## Important UXP Gotchas
-
-- **`executeAsModal` is required** for any Photoshop document modifications. Always wrap PS writes in it.
-- **Layer references go stale** after entering `executeAsModal`. Always re-fetch layers by ID inside the modal scope using `getAllLayers().find(l => l.id === savedId)`.
-- **SheetJS** is loaded as a UMD global — access it via `window.XLSX`, not as an ES import.
-- `photoshop` and `uxp` modules are UXP-specific `require()` calls — they are shimmed in `globals.js` to avoid errors in non-UXP environments (e.g. browser preview mode).
-- The plugin supports a `VITE_BOLT_WEBVIEW_UI=true` env flag for browser-based UI development (renders a dummy view instead of the real plugin UI).
-- **`remapFonts` is the only way to fix missing fonts** — per-layer `set textLayer` won't work because PS refuses to resolve a font it considers missing. Must be called before any `textItem.contents` writes.
-- **Plugin icons** must be placed in `public/icons/` so Vite copies them to `dist/icons/` at build time. The manifest references `icons/dark.png` and `icons/light.png`; Photoshop resolves `@1x`/`@2x` variants automatically from the base path.
