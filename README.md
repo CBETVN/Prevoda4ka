@@ -3,7 +3,7 @@
 
 ## What Is This?
 
-**Prevoda4ka** is a **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD files using a pre-prepared Excel translation table.
+**Prevoda4ka** is an **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD/PSB files using a pre-prepared Excel translation table.
 
 ---
 
@@ -11,13 +11,14 @@
 
 | Layer | Technology |
 |---|---|
-| Boilerplate | Bolt UXP: https://hyperbrew.co/resources/bolt-uxp
+| Boilerplate | Bolt UXP: https://hyperbrew.co/resources/bolt-uxp |
 | Runtime | Adobe UXP (Unified Extensibility Platform) inside Photoshop |
 | Framework | React 19 (JSX) |
 | Build Tool | Vite 6 + `vite-uxp-plugin` |
 | Package Manager | npm |
 | Excel Parsing | SheetJS (`xlsx.full.min.js`) bundled as a UMD lib in `/src/lib/` |
 | Photoshop API | `photoshop` UXP module (batchPlay, executeAsModal, app) |
+| PSD Binary Parsing | Custom binary parser (`psdParser.js`, `validateMasterFile.js`) for nested SO detection, font extraction, and linked layer scanning — reads raw PSD/PSB bytes without Photoshop API |
 | Filesystem API | `uxp.storage.localFileSystem` |
 | Styling | CSS + CSS variables for UXP theming |
 
@@ -38,20 +39,22 @@ Prevoda4ka/
 │   ├── globals.js             # Safe require() shims for uxp + photoshop modules
 │   ├── api/
 │   │   ├── api.js                   # Unified API object exported to components
-│   │   ├── photoshop.js             # All PS-specific functions (translateSmartObject, getSOid, purgeSOInstancesFromArray, etc.)
+│   │   ├── photoshop.js             # All PS-specific functions (translateSmartObject, recursive SO translation, font replacement, canvas cropping, etc.)
 │   │   ├── excelParser.js           # Excel file parsing — file/ArrayBuffer in → { languageData, availableLanguages } out
 │   │   ├── parsingLogic.js          # translateAll, processMatchedFolder, matchLayersToLines, parseRawPhrase, buildDoNotTranslateSet
 │   │   ├── phraseGuesser.js         # guessThePhrase — walks layer ancestry to find EN phrase + translation
 │   │   ├── getTranslatableLayers.js # Returns SO/text child layers for a folder, filtered and deduped
-│   │   ├── validateMasterFile.js    # Validates Excel structure before loading
-│   │   ├── psdParser.js             # PSD layer tree utilities
+│   │   ├── validateMasterFile.js    # Binary PSD analysis: nested SO detection, font scanning (main doc + inside SOs), missing link detection, naming quality scoring
+│   │   ├── fontManager.js           # Font replacement engine: getAllFonts, setSubstituteFont, changeFont (missing font remap + installed font swap)
+│   │   ├── psdParser.js             # Low-level PSD/PSB binary parser (layer records, additional info blocks, UUID extraction)
 │   │   ├── uxp.js                   # UXP filesystem helpers, plugin info, color scheme
 │   │   └── utils/                   # Shared utility helpers
 │   ├── components/
 │   │   ├── LoadFDiskButton.jsx           # Load Excel from disk via file picker
 │   │   ├── LoadFURLButton.jsx            # Load Excel from URL (disabled)
 │   │   ├── LanguageSelectorDropdown.jsx  # Dropdown to pick target language
-│   │   ├── DataStatusIcon.jsx            # Visual indicator: data loaded or not
+│   │   ├── FontSelectorDropdown.jsx      # Dropdown to pick substitute font for missing fonts
+│   │   ├── DataStatusIcon.jsx            # Visual indicator: data loaded or not (earth icon)
 │   │   ├── TranslateAllButton.jsx        # Triggers translateAll() for entire document
 │   │   ├── TranslateSelectedButton.jsx   # Triggers translateSelected() for active layer
 │   │   ├── TranslateSelectedTextField.jsx# Manual translation input field
@@ -60,9 +63,15 @@ Prevoda4ka/
 │   │   ├── SuggestionsContainer.jsx      # Scrollable list of translation suggestions
 │   │   ├── TranslateSuggestion.jsx       # Individual suggestion item (selectable)
 │   │   ├── PhraseReference.jsx           # Shows original EN phrase for reference
-│   │   └── ValidateMasterFile.jsx        # UI trigger for Excel validation
+│   │   ├── ValidateMFButton.jsx          # UI trigger for document validation
+│   │   ├── validationWindow.jsx          # Modal dialog displaying the validation report
+│   │   └── ResetButton.jsx              # Reloads the plugin (full state reset)
+│   ├── assets/
+│   │   └── icons/                        # Plugin icons (light/dark theme, active/inactive states)
 │   └── lib/
 │       └── xlsx.full.min.js              # Bundled SheetJS (accessed via window.XLSX)
+├── public/
+│   └── icons/                 # Plugin panel icons (dark@1x/2x, light@1x/2x) — copied to dist/ by Vite
 ├── uxp.config.js              # Plugin manifest config
 ├── vite.config.js             # Build config
 └── package.json
@@ -80,11 +89,36 @@ All state lives in `main.jsx` (App component). **No external state library** —
 | `availableLanguages` | `Array<string>` | Language codes parsed from Excel header row |
 | `selectedLanguage` | `string` | Currently selected target language |
 | `isDataLoaded` | `boolean` | Whether Excel was successfully parsed |
+| `availableFonts` | `Array<string>` | All installed font names (populated at Excel load time) |
+| `selectedFont` | `string` | Currently selected substitute font |
 | `suggestions` | `Array<{id, text, placeholder}>` | Translation suggestions for the selected layer |
 | `selectedId` | `number\|null` | Currently selected suggestion ID |
 | `isProcessing` | `boolean` | Guards async operations |
+| `textfieldValue` | `string` | Manual translation input value |
 
-The `appState` object bundles the first 4 into a single prop passed down to components/functions that need context.
+The `appState` object bundles relevant state into a single prop passed down to components/functions that need context.
+
+---
+
+## UI Workflow
+
+The plugin UI is organized into three steps:
+
+**STEP 1 — Load & Configure:**
+- Load Excel translation file (from disk or URL)
+- Select target language from dropdown
+- Optionally select a substitute font (for documents with missing fonts)
+- Validate the document (opens a report dialog)
+- Reset button reloads the plugin
+
+**STEP 2 — Translate All:**
+- Translates all matching Smart Objects and text layers in the document
+- Performs pre-flight guards: document format (PSD/PSB only), structure (must have both SOs and groups), language selection, and loaded data
+
+**OPTIONAL — Manual Translation:**
+- Generate translation suggestions for a selected layer
+- Select from suggestions or type manual translation
+- Translate individual selected layer
 
 ---
 
@@ -92,13 +126,7 @@ The `appState` object bundles the first 4 into a single prop passed down to comp
 
 The Excel file has this structure:
 
-
-
 ![Excel format example](src/assets/excelimage.png)
-
-
-
-
 
 - Row 0 = language codes (column headers). Special columns like `Screen Preview` are ignored.
 - Row 1+ = translation pairs. EN column is the lookup key; other columns are translations.
@@ -158,65 +186,175 @@ KAUFEN",...
 
 ---
 
-## PSD File Conventions
+## PSD Naming Convention
 
-The plugin uses a single unified traversal strategy regardless of how the PSD is structured — it doesn't branch on "clean" vs "sloppy" naming. Understanding what it expects helps explain both what works and what can break.
+The plugin relies on layer names inside the PSD to match against the EN phrase table. Correct naming is the foundation of automatic translation.
 
-### How the Algorithm Traverses the Document
+### Smart Object Naming
 
-1. **All visible SO layers** are collected from the document root (invisible layers skipped).
-2. For each SO, `phraseGuesser` **walks up the layer hierarchy** collecting SO/text leaf names at each ancestor level, scoring the compound against all EN phrases.
-3. It stops climbing when an **unexplained word** appears in the compound (a sibling phrase's SO leaked in) or the score drops below 0.5 — the last good ancestor becomes the **phrase container**.
-4. Once the container is identified, `getTranslatableLayers` flattens it recursively and keeps only SO + TEXT layers whose names appear as lines in the matched EN phrase.
-5. `matchLayersToLines` assigns translated lines to those layers sequentially.
+Smart Object (SO) names must match the **individual words/lines** of an EN phrase from the Excel table. The plugin collects all SO and text layer names within a folder, combines them into a compound, and scores it against EN phrases.
 
-### Naming — What Matters and What Doesn't
+**Example — phrase `"FREE\nSPINS"` (two lines in Excel):**
 
-- **SO and text layer names are the primary match signal.** The compound of their names (e.g. `"CHANCE\nFOR BONUS\nX2"`) is what scores against the EN phrase table — not the folder/group names.
-- **Folder/group names are transparent.** CamelCase scene-container names (`doubleChanceOffLandscape`, `buyBonusBtnActive1Portrait`) are never collected during vocabulary gathering. They do not interfere.
-- **"Copy N" suffixes** on SO names are stripped before matching (`"Free copy 3"` → `"Free"`).
-- **Short / noise layer names** that have zero word overlap with any EN phrase (e.g. `"Base"`, `"off"`) are filtered out before the compound is built.
-- **Ancestor folder names** between the layer and its container are also added as individual scoring candidates. ⚠️ Known issue: a folder named `"buyBonusBtnActive1Portrait - EXPORT 50%"` can outcompete the correct compound when it has overlapping words.
+The containing folder should have two SOs (or text layers) named:
+```
+📁 freeSpinsContainer/
+  🔲 FREE          ← SO or text layer, name = first line of EN phrase
+  🔲 SPINS         ← SO or text layer, name = second line of EN phrase
+```
 
-### Transparent / Noise Folder Names
+**Multi-line phrases** are split by newline. Each line becomes an independent layer name to match:
+```
+EN cell: "CONGRATULATIONS\nYOU WIN\n[NUMBER]\nFREE SPINS"
 
-The following are always treated as transparent hierarchy levels and ignored when building name candidates:
-- **Language code groups**: `EN`, `DE`, `HR`, `BG`, and all other supported language codes
-- **Generic wrapper groups**: `Group 1`, `Group 2`, etc. (matches `/^group\s+\d+$/i`)
-- **`SLICES`, `BACKGROUND`, `BG`**
+📁 congratulationsGroup/
+  🔲 CONGRATULATIONS
+  🔲 YOU WIN
+  🔲 [NUMBER]         ← placeholder — kept as-is or skipped via do-not-translate
+  🔲 FREE SPINS
+```
 
-Language group naming variants (`EN_popup`, `BG_mobile`) pass through the noise filter (they don't match exact codes) and are simply never collected as SO/text leaf names, so they don't interfere.
+**Naming rules:**
+- Names are **case-insensitive** — `free`, `FREE`, `Free` all match
+- **"Copy N" suffixes** are stripped before matching — `"Free copy 3"` → `"Free"`
+- **Short/noise names** with zero word overlap with any EN phrase (e.g. `"Base"`, `"off"`) are filtered out
+- SO names should match EN phrase lines **exactly** (after normalization). Partial matches fall back to fuzzy scoring
+
+### Indexing / Layer Order
+
+When multiple layers match the same EN phrase, they are assigned translated lines **sequentially by position in the layer stack** (top to bottom in Photoshop = first to last in the layers array):
+
+```
+EN phrase: "BUY\nBONUS"
+DE translation: "BONUS\nKAUFEN"
+
+📁 buyBonusGroup/
+  🔲 BUY     ← matched to EN line 0 → gets DE line 0 = "BONUS"
+  🔲 BONUS   ← matched to EN line 1 → gets DE line 1 = "KAUFEN"
+```
+
+The matching pipeline (`matchLayersToLines`) uses a confidence ladder:
+1. **Exact match** — layer name equals an EN line exactly
+2. **Fuzzy match** — layer name starts with an EN line (prefix)
+3. **Word-in-line** — layer name appears as a word within an EN line
+4. **Stack index fallback** — layer's position in the stack determines assignment
+
+The last matched layer absorbs any remaining translation lines (handles translator expansion where one EN line becomes multiple translated lines). Layers beyond the available translation slots get `null` (left untouched).
+
+### Do-Not-Translate Markers
+
+Lines in the EN phrase wrapped entirely in `()` mark layers that must not be translated:
+
+```
+EN: "SUPER (do not translate!)\nFREE SPINS\n[NUMBER] OF [NUMBER]"
+
+📁 superFreeSpins/
+  🔲 SUPER          ← in () in the EN phrase → skipped, keeps original text
+  🔲 FREE SPINS     ← translated
+  🔲 [NUMBER]...    ← translated
+```
+
+`buildDoNotTranslateSet(rawEnPhrase)` extracts these markers. Skipped layers still consume their positional slot so subsequent layers receive the correct translation line.
+
+### Folder / Group Names
+
+- **Folder names are transparent** — they are not used for matching. CamelCase scene names like `doubleChanceOffLandscape`, `buyBonusBtnActive1Portrait` do not interfere.
+- **Language code groups** (`EN`, `DE`, `HR`, `BG`, etc.) are treated as noise and ignored.
+- **Generic wrapper groups** (`Group 1`, `Group 2`, etc.) are ignored.
+- **Structural names** (`SLICES`, `BACKGROUND`, `BG`) are ignored.
 
 ### Target Layer Types
 
 The plugin handles **both**:
-- **Smart Objects** (`layer.kind === SMARTOBJECT`) — translated by entering edit mode, finding text layers inside, setting `textItem.contents`
-- **Plain text layers** (`layer.kind === TEXT`) — translated directly via `layer.textItem.contents` without entering edit mode
+- **Smart Objects** (`SMARTOBJECT`) — translated by entering edit mode, finding text layers inside, setting text, then saving and closing
+- **Plain text layers** (`TEXT`) — translated directly via `textItem.contents`
 
-All other layer types (shapes, fill layers, adjustment layers, masks) are excluded at the `getTranslatableLayers` stage.
+All other layer types (shapes, fills, adjustments, masks) are excluded at the `getTranslatableLayers` stage.
 
-### Structural Gotchas from Real PSDs
+---
 
-- **Double SO instances**: the same linked SO often appears twice in a folder (one directly, one inside a sub-group). They share `smartObjectMore.ID`. `purgeSOInstancesFromArray` deduplicates before the loop; `processedIds` prevents re-translation when the same container is matched again from a sibling SO.
-- **Intermediate wrapper groups**: SO/text layers are commonly nested under unnamed sub-groups (`Group 3`, `Surface`, `txt only`). `_collectVocabNames` recurses through these transparently.
-- **Partial translations**: many EN phrases have empty cells for some languages. `parseExcelFile` stores `""` — `phraseGuesser` rejects empty translated phrases and leaves the layer untouched.
-- **`()` do-not-translate markers**: lines in the EN phrase wrapped entirely in `()` (e.g. `(X2)`) mark layers that must never be translated. `buildDoNotTranslateSet(rawEnPhrase)` reads these on-demand from the matched EN phrase and passes the resulting `Set` to `matchLayersToLines`. The skipped layer's trans slot is still consumed so subsequent layers receive the correct translation line.
-- **Locked layers**: `translateSmartObject` checks for locked state before entering edit mode and skips silently.
-- **Invisible layers**: excluded at collection time — if a language group (e.g. the `BG` group) is hidden, it is skipped entirely.
+## Translation Pipeline
 
-### Matching Strategy (current implementation)
+### Full Document Translation (`translateAll`)
 
-The pipeline is fully implemented and working end-to-end:
+1. **Pre-flight guards:**
+   - Document format check via `isDocumentValidForTranslation()` — must be PSD or PSB (uses `batchPlay` to read the file extension)
+   - Structure check — document must contain both Smart Objects and groups among visible layers
+   - Language must be selected and Excel data must be loaded
 
-1. **`translateAll`** collects all visible Smart Object layers, deduplicates by `smartObjectMore.ID` via `purgeSOInstancesFromArray`, then iterates unique SOs.
-2. **`phraseGuesser.guessThePhrase(layer, appState)`** walks up the layer ancestry to find the "phrase container" — the highest ancestor whose child SO/text names are fully explained by a single EN phrase. Scores candidates with word-overlap ratio and returns `{ enPhrase, translatedPhrase, container }`.
-3. **`processMatchedFolder(folder, appState, enPhrase, translatedPhrase)`** is called with the matched container. It:
-   - Parses both phrases into line arrays via `parseRawPhrase(phrase, "linesArray")`
+2. **Layer collection:** `getAllVisibleLayers` flattens the document tree, keeping only visible layers. Smart Objects are filtered and deduplicated by `smartObjectMore.ID` via `purgeSOInstancesFromArray`.
+
+3. **Phrase matching:** For each unique SO, `phraseGuesser.guessThePhrase(layer, appState)` walks up the layer ancestry to find the "phrase container" — the highest ancestor whose child SO/text names are fully explained by a single EN phrase. Returns `{ enPhrase, translatedPhrase, container }`.
+
+4. **Folder processing:** `processMatchedFolder(folder, appState, enPhrase, translatedPhrase)`:
+   - Parses both phrases into line arrays via `parseRawPhrase`
    - Calls `getTranslatableLayers(folder, enPhrase)` to get only relevant SO/text children
-   - Builds a `doNotTranslate` set via `buildDoNotTranslateSet(enPhrase)` — lines fully wrapped in `()` are skipped without consuming a trans slot
-   - Calls `matchLayersToLines(childLayers, enLines, transLines, doNotTranslate)` to assign a translated string to each child layer
-4. **`matchLayersToLines`** resolves each child layer to an EN line index using a confidence ladder: exact name → fuzzy (startsWith) → word-in-line → stack index fallback. Layers are sorted by EN index, then assigned trans lines sequentially. The last assigned layer absorbs any remaining trans lines (translator expansion). Layers beyond the trans slot count get `null` (left untouched).
-5. **`processedIds`** (module-level `Set` of `smartObjectMore.ID`) prevents duplicate translations when the same SO appears in multiple folders or has multiple PSD instances.
+   - Builds a `doNotTranslate` set from `()` markers in the EN phrase
+   - Calls `matchLayersToLines` to assign a translated string to each child layer
+   - Calls `translateSmartObject` or `translateTextLayer` for each assigned layer
+
+5. **Deduplication:** `processedIds` (module-level `Set` of `smartObjectMore.ID`) prevents duplicate translations when the same SO appears in multiple folders or has multiple PSD instances.
+
+### Smart Object Translation (`translateSmartObject`)
+
+Two modes controlled by the `RECURSIVE_SO` flag:
+
+**Non-recursive (legacy):**
+- Opens the SO, translates all visible text layers inside, restores font sizes, saves and closes
+
+**Recursive (current default, `RECURSIVE_SO = true`):**
+- Opens the SO, translates all visible text layers
+- Then iterates any nested SOs inside, opens each one recursively, translates, saves and closes
+- Each level: remap fonts → translate text → recurse into nested SOs → crop canvas → save → close
+- A layer count safeguard skips SOs with excessive layers to prevent performance issues
+- `isTopLevel` flag controls whether canvas cropping runs (only at the outermost SO level)
+
+### Font Replacement (`fontManager.js`)
+
+When a substitute font is selected, font replacement runs inside each SO before text translation:
+
+**Part 1 — Missing fonts:** Uses Photoshop's `remapFonts` batchPlay command — a single document-wide call that replaces all missing font identities at once. This is the only way to fix missing fonts; per-layer writes don't work because PS refuses to resolve fonts it considers missing.
+
+**Part 2 — Installed fonts:** For layers that have an installed font but not the substitute, uses `set textLayer` batchPlay per layer. Clones the full `textKey` descriptor (preserving text content, paragraph styles, all formatting) and swaps only font properties in each `textStyleRange`.
+
+**Atomic write path:** After font remap, text layers that had missing fonts use a special single batchPlay call that sets text + font + size atomically. This prevents `textItem.contents` from destroying the remapped font (a known Photoshop bug where the DOM write path permanently nukes remapped fonts).
+
+**Normal write path:** Layers with installed fonts use `textItem.contents` followed by a `batchPlay` size restore (workaround for the PS font-shrink bug where `textItem.contents` resets `impliedFontSize`).
+
+### Canvas Cropping (`cropCanvasToLayerBounds`)
+
+After translating text inside an SO, the plugin crops the SO's canvas to fit the bounds of the translated content. This prevents the SO from visually overflowing in the parent document. Runs only at the top-level SO (not on nested SOs).
+
+---
+
+## Document Validation (`validateDoc`)
+
+The "Validate Doc" button runs a comprehensive pre-translation analysis and displays results in a modal dialog (`ValidationWindow`). All checks run inside a single `executeAsModal` call for efficiency.
+
+The validation reads the PSD file as raw bytes alongside the Photoshop DOM, performing binary-level analysis that the PS API cannot provide.
+
+### Checks performed:
+
+**1. Nested Smart Objects**
+- Parses the PSD binary to find embedded SO data (lnk2/lnkD/lnk3 blocks in GALI)
+- For each unique SO, checks if its inner PSB contains further embedded SOs
+- Reports count and names of SOs that contain nested SOs (these may cause issues during recursive translation)
+
+**2. Missing Fonts**
+- **Main document:** Reads `textKey.textStyleRange` descriptors for all text layers, checks `fontPostScriptName` against `app.fonts`
+- **Inside Smart Objects:** Binary extraction — navigates the PSD's GALI section → lnk2 blocks → liFD records → inner PSB → TySh (type tool) blocks → `/Name (...)` fields in tdta. Supports both ASCII and UTF-16BE encoded font names
+- Reports all missing fonts with layer names
+
+**3. Missing Links**
+- **Top-level:** Checks `smartObject.linkMissing` on each SO's batchPlay descriptor
+- **Nested:** Uses `findLinkedLayersInSO` to recursively scan inside embedded SOs for SoLE (linked external SO) layers — these almost always have broken paths because file references are machine-specific
+- Reports count and sample layer names
+
+**4. Naming Quality (Fuzziness)**
+- Only runs when Excel data is loaded
+- Classifies every layer name as `phrase` (matches EN vocabulary), `structural` (matches known structural names like `BACKGROUND`, `SLICES`, scene container names), `both`, or `noise`
+- Scores each category (groups, smart objects, text layers, other) with weighted scoring: `groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05`
+- Overall score 0–100 indicates how well the PSD naming aligns with the translation table
 
 ---
 
@@ -224,78 +362,95 @@ The pipeline is fully implemented and working end-to-end:
 
 ### `photoshop.js`
 
-**`translateSmartObject(layer, translation)`**
-- Enters SO edit mode via batchPlay (`placedLayerEditContents`), finds all text layers inside, sets `textItem.contents`, restores `impliedFontSize` via batchPlay (workaround for PS font-shrink bug), then saves and closes the SO document
-- Skips locked layers silently (locked SO would trigger "command unavailable" error)
-
-**`translateTextLayer(layer, translation)`**
-- Translates a plain text layer directly without entering edit mode
-
-**`getSOid(layer)`**
-- Returns `smartObjectMore.ID` for a layer via a single batchPlay `get` call — the shared ID used for deduplication across all instances of the same linked SO
-
-**`purgeSOInstancesFromArray(layers)`**
-- Deduplicates an array of SO layers by `smartObjectMore.ID`, returning only one representative per unique SO
-
-**`getAllVisibleLayers(layers)`**
-- Recursively flattens the layer tree, returning only visible layers
-
-**`getLayerInfo(layer)`**
-- Returns the raw batchPlay descriptor for a layer
-
-**`isLayerAGroup(layer)`**
-- Returns true if a layer is a group with children
+| Function | Description |
+|---|---|
+| `translateSmartObject(layer, translation)` | Routes to recursive or legacy path based on `RECURSIVE_SO` flag. Opens SO, translates text layers (with font remap if enabled), handles nested SOs recursively, crops canvas, saves and closes. |
+| `translateTextLayer(layer, translation)` | Translates a plain text layer directly via `textItem.contents`. |
+| `editSmartObject(smartObject)` | Opens an SO for editing via batchPlay `placedLayerEditContents`. |
+| `getSOid(layer)` | Returns `smartObjectMore.ID` — the shared ID used for deduplication across all instances of the same linked SO. |
+| `purgeSOInstancesFromArray(layers)` | Deduplicates an array of SO layers by `smartObjectMore.ID`, returning one representative per unique SO. |
+| `getAllLayers(layers)` | Recursively flattens the layer tree, returning all layers. |
+| `getAllVisibleLayers(layers)` | Recursively flattens the layer tree, returning only visible layers. |
+| `getLayerInfo(layer)` | Returns the raw batchPlay descriptor for a layer. |
+| `getParentFolder(layer)` | Walks up the layer tree to find the parent group. |
+| `isLayerAGroup(layer)` | Returns true if a layer is a group with children. |
+| `cropCanvasToLayerBounds(allLayers, allInnerInfos)` | Resizes the SO canvas to fit translated text bounds. |
 
 ### `parsingLogic.js`
 
-**`translateAll(appState)`**
-- Collects all visible SOs, deduplicates by SO ID, then for each unique SO calls `phraseGuesser.guessThePhrase` and dispatches to `processMatchedFolder`. Uses module-level `processedIds` Set to skip already-translated SOs.
-
-**`translateSelected(appState)`**
-- Translates the single currently selected SO or text layer using the value from the manual input field
-
-**`processMatchedFolder(folderLayer, appState, enPhrase, translatedPhrase)`**
-- Parses phrases to line arrays, fetches translatable children via `getTranslatableLayers`, matches layers to trans lines via `matchLayersToLines`, then calls `translateSmartObject` for each assigned layer
-
-**`matchLayersToLines(childLayers, enLines, transLines, doNotTranslate = new Set())`**
-- Name-first matching (exact → fuzzy → word-in-line → stack index). Returns `Map<layerId, { text, matchType } | null>`. Sequential assignment — last layer absorbs tail; overflow gets null. Layers in `doNotTranslate` are set to null but still consume their trans slot so positional alignment is preserved. Returns confidence score; skips folder if below 0.5.
-
-**`parseRawPhrase(phrase, mode)`**
-- Cleans a raw Excel phrase. Modes: `"linesArray"` (array of lines, spaces preserved), `"oneLiner"` (flat string), `"raw"` (newlines preserved), `"strict"` (drops `[...]` lines, returns flat string)
-
-**`isNameENPhrase(layerName, appState)`**
-- Returns true if a string matches any EN entry after `parseRawPhrase("oneLiner")` normalization
-
-**`generateSuggestions(layer, appState)`**
-- Returns translation candidates for the selected layer using `phraseGuesser.guessThePhrase` + `parsePhraseForSuggestions`
-
-**`buildDoNotTranslateSet(rawEnPhrase)`**
-- Scans a raw EN phrase for lines entirely wrapped in `()` (e.g. `(X2)`) and returns a `Set` of uppercase layer names to skip. Called by `processMatchedFolder` on the matched EN phrase before each `matchLayersToLines` call.
-
-### `excelParser.js`
-
-**`parseExcelFile(fileOrArrayBuffer)`**
-- Accepts UXP file object or ArrayBuffer, reads via SheetJS, returns `{ languageData, availableLanguages }`. The only callers are `LoadFDiskButton` and `LoadFURLButton`, both via `api.parseExcelFile()`.
+| Function | Description |
+|---|---|
+| `translateAll(appState)` | Main entry point. Guards: format check (PSD/PSB), structure check (SOs + groups), language + data check. Collects visible SOs, deduplicates, runs `phraseGuesser` + `processMatchedFolder` for each. |
+| `processMatchedFolder(folder, appState, enPhrase, translatedPhrase)` | Parses phrases to line arrays, fetches translatable children, matches layers to translation lines, dispatches to `translateSmartObject`/`translateTextLayer`. |
+| `matchLayersToLines(childLayers, enLines, transLines, doNotTranslate)` | Name-first matching (exact → fuzzy → word-in-line → stack index). Returns `Map<layerId, { text, matchType } | null>`. |
+| `translateSelected(appState)` | Translates the single currently selected layer using manual input. |
+| `generateSuggestions(layer, appState)` | Returns translation candidates using `phraseGuesser` + `parsePhraseForSuggestions`. |
+| `parseRawPhrase(phrase, mode)` | Cleans a raw Excel phrase. Modes: `"linesArray"`, `"oneLiner"`, `"raw"`, `"strict"`. |
+| `buildDoNotTranslateSet(rawEnPhrase)` | Extracts `()`-wrapped EN lines into a Set of layer names to skip. |
+| `isDocumentValidForTranslation()` | Checks document format via batchPlay — returns false with alert if not PSD/PSB. |
 
 ### `phraseGuesser.js`
 
-**`guessThePhrase(layer, appState)`**
-- Walks up the layer ancestry to find a "phrase container" — the highest ancestor whose visible SO/text child names are fully explained by a single EN phrase. Scores folder names and compound SO-name strings against the EN table with word-overlap ratio. Returns `{ enPhrase, translatedPhrase, container }` or `null`.
+| Function | Description |
+|---|---|
+| `guessThePhrase(layer, appState)` | Walks up the layer ancestry to find a "phrase container" — the highest ancestor whose visible SO/text child names are fully explained by a single EN phrase. Returns `{ enPhrase, translatedPhrase, container }` or `null`. |
 
 ### `getTranslatableLayers.js`
 
-**`getTranslatableLayers(folderLayer, enPhrase)`**
-- Recursively flattens `folderLayer`, filters to SO + TEXT kinds only, deduplicates SOs by `smartObjectMore.ID`, and filters by whether the layer name matches any word or line in the EN phrase. Returns `{ layers, soIdMap }`.
+| Function | Description |
+|---|---|
+| `getTranslatableLayers(folderLayer, enPhrase)` | Recursively flattens a folder, filters to SO + TEXT kinds, deduplicates SOs by ID, filters by EN phrase word match. Returns `{ layers, soIdMap }`. |
+
+### `excelParser.js`
+
+| Function | Description |
+|---|---|
+| `parseExcelFile(fileOrArrayBuffer)` | Reads Excel via SheetJS, returns `{ languageData, availableLanguages }`. |
+
+### `fontManager.js`
+
+| Function | Description |
+|---|---|
+| `getAllFonts()` | Returns sorted array of all installed font names. Also caches font metadata (postScriptName, family, style) for use by `changeFont`. |
+| `setSubstituteFont(fontName)` | Sets the module-level substitute font target. |
+| `changeFont(allLayerDescriptors)` | Two-phase font replacement: (1) `remapFonts` for missing fonts, (2) `set textLayer` for installed fonts. Returns true if any fonts were changed. |
+
+### `validateMasterFile.js`
+
+| Function | Description |
+|---|---|
+| `validateDoc(appState)` | Unified validation entry point. Reads PSD as binary, fetches all layer descriptors in one bulk batchPlay, then runs: nested SO detection, font scanning (main doc + inside SOs), missing link detection, naming quality analysis. Returns structured results for the validation window. |
+| `getNestedSOData()` | Standalone nested SO scanner (diagnostic/debug). |
+| `extractFontsFromSO(buffer, uuid)` | Binary extraction of font names from inside a specific embedded SO. |
+| `findLinkedLayersInSO(buffer, uuid)` | Recursively scans inside an embedded SO for SoLE (linked external) layers. |
+
+### `psdParser.js`
+
+| Function | Description |
+|---|---|
+| `parsePsd(buffer)` | Parses a PSD/PSB binary buffer into layer records with names, bounds, and additional info block keys. |
+| `extractUuidFromBlock(buffer, offset, end)` | Extracts the UUID string from a liFD record in the PSD binary. |
+
+---
+
+## Structural Gotchas from Real PSDs
+
+- **Double SO instances**: the same linked SO often appears twice in a folder (one directly, one inside a sub-group). They share `smartObjectMore.ID`. `purgeSOInstancesFromArray` deduplicates before the loop; `processedIds` prevents re-translation when the same container is matched again from a sibling SO.
+- **Intermediate wrapper groups**: SO/text layers are commonly nested under unnamed sub-groups (`Group 3`, `Surface`, `txt only`). `_collectVocabNames` recurses through these transparently.
+- **Partial translations**: many EN phrases have empty cells for some languages. `parseExcelFile` stores `""` — `phraseGuesser` rejects empty translated phrases and leaves the layer untouched.
+- **Locked layers**: `translateSmartObject` checks for locked state before entering edit mode and skips silently (locked SO would trigger "command unavailable").
+- **Invisible layers**: excluded at collection time — if a language group (e.g. the `BG` group) is hidden, it is skipped entirely.
+- **Nested Smart Objects**: the recursive translation path opens nested SOs depth-first. A layer count safeguard prevents runaway processing on very complex SOs.
+- **Missing fonts**: `textItem.contents` permanently destroys remapped fonts. The atomic batchPlay write path avoids this. Font remap must happen BEFORE any text writes.
 
 ---
 
 ## Known Issues / WIP Areas
 
-- **Already-processed SOs consume a trans slot in `matchLayersToLines`** — when `Free` is already in `processedIds`, it still occupies `uniquePosition=0` during assignment, shifting `Spins` and `ACTIVE` to wrong slots. Fix: pass a `skipLayerIds` set to `matchLayersToLines` so processed layers are excluded without advancing the slot counter.
-- **Ancestor folder names as `phraseGuesser` candidates** — `_buildPhraseCandidates` pushes ancestor folder names (e.g. `buyBonusBtnActive1Portrait - EXPORT 50%`) into the scoring pool. These can outcompete the correct compound SO-name candidate when the folder name contains overlapping words. Folder names should be deprioritized or excluded.
 - `LoadFURLButton` is disabled (URL hardcoded to `null`)
 - Font shrink bug: workaround in `translateSmartObject` restores `impliedFontSize` via batchPlay after setting `textItem.contents`
 - Some diagnostic `console.log` calls remain, marked `// DELETE LATER`
+- `validateMasterFile.js` contains `KNOWN_STRUCTURAL_NAMES` — a hardcoded set of known PSD structural/scene names used for naming quality scoring. Should be made configurable or derived from the document.
 
 ---
 
@@ -306,3 +461,5 @@ The pipeline is fully implemented and working end-to-end:
 - **SheetJS** is loaded as a UMD global — access it via `window.XLSX`, not as an ES import.
 - `photoshop` and `uxp` modules are UXP-specific `require()` calls — they are shimmed in `globals.js` to avoid errors in non-UXP environments (e.g. browser preview mode).
 - The plugin supports a `VITE_BOLT_WEBVIEW_UI=true` env flag for browser-based UI development (renders a dummy view instead of the real plugin UI).
+- **`remapFonts` is the only way to fix missing fonts** — per-layer `set textLayer` won't work because PS refuses to resolve a font it considers missing. Must be called before any `textItem.contents` writes.
+- **Plugin icons** must be placed in `public/icons/` so Vite copies them to `dist/icons/` at build time. The manifest references `icons/dark.png` and `icons/light.png`; Photoshop resolves `@1x`/`@2x` variants automatically from the base path.
