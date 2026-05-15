@@ -6,8 +6,8 @@ const extraPrefs = {
   uniqueIds: true,
 };
 
-export const id = "LocalizationMaster"; 
-const name = "LocalizationMaster"; 
+export const id = "Prevoda4ka";
+const name = "Prevoda4ka";
 
 const manifest = {
   id,
