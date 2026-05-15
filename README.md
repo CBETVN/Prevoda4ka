@@ -276,163 +276,134 @@ All other layer types (shapes, fills, adjustments, masks) are excluded at the `g
 
 ---
 
-## Translation Pipeline
+## How the Plugin Works
 
-### Full Document Translation (`translateAll`)
+### Translate All
 
-1. **Pre-flight guards:**
-   - Document format check via `isDocumentValidForTranslation()` — must be PSD or PSB (uses `batchPlay` to read the file extension)
-   - Structure check — document must contain both Smart Objects and groups among visible layers
-   - Language must be selected and Excel data must be loaded
+The main translation button. Translates every matching Smart Object and text layer in the entire document in one pass.
 
-2. **Layer collection:** `getAllVisibleLayers` flattens the document tree, keeping only visible layers. Smart Objects are filtered and deduplicated by `smartObjectMore.ID` via `purgeSOInstancesFromArray`.
+**Before it starts, the plugin runs these checks (in order):**
+1. **Format check** — the active document must be a `.psd` or `.psb` file. Any other format (TIFF, PNG, etc.) is rejected with an alert.
+2. **Structure check** — the document must contain both Smart Objects and groups among its visible layers. If either is missing, it's not a valid master file for translation.
+3. **Language check** — a target language must be selected from the dropdown.
+4. **Data check** — the Excel translation file must be loaded.
 
-3. **Phrase matching:** For each unique SO, `phraseGuesser.guessThePhrase(layer, appState)` walks up the layer ancestry to find the "phrase container" — the highest ancestor whose child SO/text names are fully explained by a single EN phrase. Returns `{ enPhrase, translatedPhrase, container }`.
+If all checks pass, translation proceeds:
 
-4. **Folder processing:** `processMatchedFolder(folder, appState, enPhrase, translatedPhrase)`:
-   - Parses both phrases into line arrays via `parseRawPhrase`
-   - Calls `getTranslatableLayers(folder, enPhrase)` to get only relevant SO/text children
-   - Builds a `doNotTranslate` set from `()` markers in the EN phrase
-   - Calls `matchLayersToLines` to assign a translated string to each child layer
-   - Calls `translateSmartObject` or `translateTextLayer` for each assigned layer
+1. The plugin collects all visible layers in the document and filters down to Smart Objects only. If the same SO appears multiple times (linked instances), only one copy is kept — translating one instance automatically updates all others.
 
-5. **Deduplication:** `processedIds` (module-level `Set` of `smartObjectMore.ID`) prevents duplicate translations when the same SO appears in multiple folders or has multiple PSD instances.
+2. For each unique SO, the plugin walks up its layer hierarchy to find the **phrase container** — the highest parent folder whose children (SO and text layer names) are fully explained by a single EN phrase from the Excel table. This determines which EN phrase and which translated phrase apply.
 
-### Smart Object Translation (`translateSmartObject`)
+3. Inside the matched folder, the plugin collects all translatable children (SOs and text layers), then matches each one to a line from the translated phrase. Matching works on a confidence ladder:
+   - **Exact** — layer name equals an EN line exactly (e.g. layer `FREE SPINS` matches EN line `FREE SPINS`)
+   - **Fuzzy** — layer name starts with an EN line (e.g. `CREDITS copy 2` matches `CREDITS`)
+   - **Word-in-line** — layer name appears as a word within a multi-word EN line (e.g. `FREE` matches inside `FREE SPINS`)
+   - **Stack index fallback** — if the name doesn't match anything, the layer's position in the stack determines which translation line it gets
 
-Two modes controlled by the `RECURSIVE_SO` flag:
+   If too many layers fall through to stack-index matching (confidence below 50%), the entire folder is skipped to avoid misassignment.
 
-**Non-recursive (legacy):**
-- Opens the SO, translates all visible text layers inside, restores font sizes, saves and closes
+4. Each matched layer receives its translated text. Smart Objects are opened, edited, and saved back. Text layers are updated directly. See **Recursive Smart Object Translation** and **Font Replacement** below for details on how SOs are handled.
 
-**Recursive (current default, `RECURSIVE_SO = true`):**
-- Opens the SO, translates all visible text layers
-- Then iterates any nested SOs inside, opens each one recursively, translates, saves and closes
-- Each level: remap fonts → translate text → recurse into nested SOs → crop canvas → save → close
-- A layer count safeguard skips SOs with excessive layers to prevent performance issues
-- `isTopLevel` flag controls whether canvas cropping runs (only at the outermost SO level)
+5. After a folder is processed, all SO IDs within it are marked as "done". If the same SO appears again in another folder or as a nested instance, it is skipped — no duplicate work.
 
-### Font Replacement (`fontManager.js`)
+### Translate Selected
 
-When a substitute font is selected, font replacement runs inside each SO before text translation:
+Translates a single manually selected layer. Use this for one-off corrections or when you want to override the automatic translation for a specific layer.
 
-**Part 1 — Missing fonts:** Uses Photoshop's `remapFonts` batchPlay command — a single document-wide call that replaces all missing font identities at once. This is the only way to fix missing fonts; per-layer writes don't work because PS refuses to resolve fonts it considers missing.
+**How to use:**
+1. Select exactly one layer in Photoshop (must be a Smart Object or text layer)
+2. Either type your translation in the text field, or use **Generate Suggestion** to get one
+3. Click **Translate Selected**
 
-**Part 2 — Installed fonts:** For layers that have an installed font but not the substitute, uses `set textLayer` batchPlay per layer. Clones the full `textKey` descriptor (preserving text content, paragraph styles, all formatting) and swaps only font properties in each `textStyleRange`.
+The plugin will alert you if:
+- No layer or more than one layer is selected
+- The selected layer is not a Smart Object or text layer
+- The text field is empty
 
-**Atomic write path:** After font remap, text layers that had missing fonts use a special single batchPlay call that sets text + font + size atomically. This prevents `textItem.contents` from destroying the remapped font (a known Photoshop bug where the DOM write path permanently nukes remapped fonts).
+### Generate Suggestion
 
-**Normal write path:** Layers with installed fonts use `textItem.contents` followed by a `batchPlay` size restore (workaround for the PS font-shrink bug where `textItem.contents` resets `impliedFontSize`).
+Finds the correct translation for the currently selected layer based on the Excel data.
 
-### Canvas Cropping (`cropCanvasToLayerBounds`)
+**How it works:**
+1. The plugin looks at the selected layer and walks up its parent folders to find which EN phrase it belongs to (same logic as Translate All)
+2. It finds the matching translated phrase for the selected language
+3. It returns the relevant portion of the translation as a suggestion (or multiple suggestions if the phrase has several lines)
 
-After translating text inside an SO, the plugin crops the SO's canvas to fit the bounds of the translated content. This prevents the SO from visually overflowing in the parent document. Runs only at the top-level SO (not on nested SOs).
+The suggestions appear in a scrollable list — click one to fill the text field, then use **Translate Selected** to apply it.
+
+If the plugin can't find a matching phrase for the selected layer (e.g. the layer isn't named according to the naming convention, or its parent folder doesn't correspond to any EN phrase), it shows an alert.
+
+### Recursive Smart Object Translation
+
+Smart Objects in the master files often contain **other Smart Objects inside them** (nested SOs). For example, a "FREE SPINS" SO might contain a text layer for the words and another nested SO for a decorative element with its own text.
+
+The plugin handles this automatically with **depth-first recursive translation**:
+
+1. Open the top-level SO
+2. Replace fonts if a substitute font is selected (see **Font Replacement** below)
+3. Translate all visible text layers inside
+4. Check if there are any nested SOs inside — if yes, open each one and repeat from step 2
+5. After the deepest level is fully translated, crop the SO canvas to fit the new text, save, and close
+6. Work back up, saving and closing each level
+
+This means a single "Translate All" click handles arbitrarily deep nesting — SOs inside SOs inside SOs are all translated in one pass.
+
+**Canvas cropping:** after translating text inside an SO, the plugin resizes the SO's internal canvas to tightly fit the translated content. This prevents the SO from visually overflowing or leaving large empty gaps in the parent document. Cropping only runs at the outermost SO level.
+
+**Safety guard:** if a Smart Object contains an unusually large number of layers, the plugin skips it to prevent Photoshop from freezing on overly complex structures.
+
+### Font Replacement
+
+When the master PSD was built on a different machine, the fonts used in text layers may not be installed on your system. Photoshop marks these as "missing fonts" and refuses to properly edit them. The plugin solves this with a two-phase font replacement that runs automatically inside each SO during translation (only when you've selected a substitute font from the dropdown).
+
+**Phase 1 — Missing fonts:**
+All missing fonts in the document are replaced at once with the selected substitute. This is the only reliable way to fix missing fonts in Photoshop — editing individual layers won't work because Photoshop refuses to apply any changes to text with a missing font.
+
+**Phase 2 — Installed but wrong fonts:**
+After fixing missing fonts, any text layers that have an installed font (but not the substitute font) are updated individually. The plugin carefully preserves all text formatting (size, color, paragraph style, etc.) and only swaps the font name.
+
+**Why the order matters:**
+Photoshop has a known bug: if you change the text content of a layer that just had its missing font fixed, the font fix gets destroyed — the text reverts to the missing font state. To avoid this, when a layer had a missing font, the plugin writes the new text and the font in a single atomic operation instead of two separate steps. This is why font replacement always runs **before** text translation inside each SO.
+
+**Font size preservation:**
+Photoshop has another quirk: changing text content via the standard API resets the visual font size. After every text change, the plugin restores the original font size to keep the layout intact.
 
 ---
 
-## Document Validation (`validateDoc`)
+## Document Validation
 
-The "Validate Doc" button runs a comprehensive pre-translation analysis and displays results in a modal dialog (`ValidationWindow`). All checks run inside a single `executeAsModal` call for efficiency.
+The **Validate Doc** button runs a comprehensive pre-translation analysis and shows the results in a popup dialog. Use it before translating to catch potential problems.
 
-The validation reads the PSD file as raw bytes alongside the Photoshop DOM, performing binary-level analysis that the PS API cannot provide.
+The validation reads the PSD file both through Photoshop's API and by parsing the raw file bytes directly (which reveals information the API cannot access, like what's inside embedded Smart Objects).
 
-### Checks performed:
+### What it checks:
 
 **1. Nested Smart Objects**
-- Parses the PSD binary to find embedded SO data (lnk2/lnkD/lnk3 blocks in GALI)
-- For each unique SO, checks if its inner PSB contains further embedded SOs
-- Reports count and names of SOs that contain nested SOs (these may cause issues during recursive translation)
+Scans the PSD binary to find Smart Objects that contain other Smart Objects inside them. These are reported with their names and count. Nested SOs are supported by the recursive translation, but extreme nesting depth or very complex structures may cause slowdowns.
 
 **2. Missing Fonts**
-- **Main document:** Reads `textKey.textStyleRange` descriptors for all text layers, checks `fontPostScriptName` against `app.fonts`
-- **Inside Smart Objects:** Binary extraction — navigates the PSD's GALI section → lnk2 blocks → liFD records → inner PSB → TySh (type tool) blocks → `/Name (...)` fields in tdta. Supports both ASCII and UTF-16BE encoded font names
-- Reports all missing fonts with layer names
+Checks for fonts that are used in text layers but not installed on your system. This check covers:
+- **Text layers in the main document** — reads each text layer's font settings
+- **Text layers inside Smart Objects** — parses the raw binary data of each embedded SO to extract font names from within
+
+All missing fonts are reported with the layer names that use them. If you see missing fonts, select a substitute font from the dropdown before translating.
 
 **3. Missing Links**
-- **Top-level:** Checks `smartObject.linkMissing` on each SO's batchPlay descriptor
-- **Nested:** Uses `findLinkedLayersInSO` to recursively scan inside embedded SOs for SoLE (linked external SO) layers — these almost always have broken paths because file references are machine-specific
-- Reports count and sample layer names
+Checks for Smart Objects whose linked source files cannot be found. This happens when:
+- **Top-level SOs** — the linked file was moved or deleted
+- **Nested SOs** — SOs inside other SOs often reference files by absolute paths from the machine where the PSD was created. These almost always show as "missing" on a different machine
 
-**4. Naming Quality (Fuzziness)**
-- Only runs when Excel data is loaded
-- Classifies every layer name as `phrase` (matches EN vocabulary), `structural` (matches known structural names like `BACKGROUND`, `SLICES`, scene container names), `both`, or `noise`
-- Scores each category (groups, smart objects, text layers, other) with weighted scoring: `groups: 0.40, smartObjects: 0.50, textLayers: 0.05, otherLayers: 0.05`
-- Overall score 0–100 indicates how well the PSD naming aligns with the translation table
+Missing links are reported with count and layer names. Missing top-level links may prevent those SOs from being translated.
 
----
+**4. Naming Quality Score**
+Only available when Excel data is loaded. Evaluates how well the PSD's layer names align with the EN phrases in the Excel table.
 
-## Core Functions
+Every layer name is classified as:
+- **Phrase** — matches a word from the EN translation table (good — these layers will be found during translation)
+- **Structural** — matches known structural names like `BACKGROUND`, `SLICES`, or scene container names (neutral — these are expected non-translatable layers)
+- **Noise** — doesn't match anything (potential problem — these layers won't be matched during translation)
 
-### `photoshop.js`
-
-| Function | Description |
-|---|---|
-| `translateSmartObject(layer, translation)` | Routes to recursive or legacy path based on `RECURSIVE_SO` flag. Opens SO, translates text layers (with font remap if enabled), handles nested SOs recursively, crops canvas, saves and closes. |
-| `translateTextLayer(layer, translation)` | Translates a plain text layer directly via `textItem.contents`. |
-| `editSmartObject(smartObject)` | Opens an SO for editing via batchPlay `placedLayerEditContents`. |
-| `getSOid(layer)` | Returns `smartObjectMore.ID` — the shared ID used for deduplication across all instances of the same linked SO. |
-| `purgeSOInstancesFromArray(layers)` | Deduplicates an array of SO layers by `smartObjectMore.ID`, returning one representative per unique SO. |
-| `getAllLayers(layers)` | Recursively flattens the layer tree, returning all layers. |
-| `getAllVisibleLayers(layers)` | Recursively flattens the layer tree, returning only visible layers. |
-| `getLayerInfo(layer)` | Returns the raw batchPlay descriptor for a layer. |
-| `getParentFolder(layer)` | Walks up the layer tree to find the parent group. |
-| `isLayerAGroup(layer)` | Returns true if a layer is a group with children. |
-| `cropCanvasToLayerBounds(allLayers, allInnerInfos)` | Resizes the SO canvas to fit translated text bounds. |
-
-### `parsingLogic.js`
-
-| Function | Description |
-|---|---|
-| `translateAll(appState)` | Main entry point. Guards: format check (PSD/PSB), structure check (SOs + groups), language + data check. Collects visible SOs, deduplicates, runs `phraseGuesser` + `processMatchedFolder` for each. |
-| `processMatchedFolder(folder, appState, enPhrase, translatedPhrase)` | Parses phrases to line arrays, fetches translatable children, matches layers to translation lines, dispatches to `translateSmartObject`/`translateTextLayer`. |
-| `matchLayersToLines(childLayers, enLines, transLines, doNotTranslate)` | Name-first matching (exact → fuzzy → word-in-line → stack index). Returns `Map<layerId, { text, matchType } | null>`. |
-| `translateSelected(appState)` | Translates the single currently selected layer using manual input. |
-| `generateSuggestions(layer, appState)` | Returns translation candidates using `phraseGuesser` + `parsePhraseForSuggestions`. |
-| `parseRawPhrase(phrase, mode)` | Cleans a raw Excel phrase. Modes: `"linesArray"`, `"oneLiner"`, `"raw"`, `"strict"`. |
-| `buildDoNotTranslateSet(rawEnPhrase)` | Extracts `()`-wrapped EN lines into a Set of layer names to skip. |
-| `isDocumentValidForTranslation()` | Checks document format via batchPlay — returns false with alert if not PSD/PSB. |
-
-### `phraseGuesser.js`
-
-| Function | Description |
-|---|---|
-| `guessThePhrase(layer, appState)` | Walks up the layer ancestry to find a "phrase container" — the highest ancestor whose visible SO/text child names are fully explained by a single EN phrase. Returns `{ enPhrase, translatedPhrase, container }` or `null`. |
-
-### `getTranslatableLayers.js`
-
-| Function | Description |
-|---|---|
-| `getTranslatableLayers(folderLayer, enPhrase)` | Recursively flattens a folder, filters to SO + TEXT kinds, deduplicates SOs by ID, filters by EN phrase word match. Returns `{ layers, soIdMap }`. |
-
-### `excelParser.js`
-
-| Function | Description |
-|---|---|
-| `parseExcelFile(fileOrArrayBuffer)` | Reads Excel via SheetJS, returns `{ languageData, availableLanguages }`. |
-
-### `fontManager.js`
-
-| Function | Description |
-|---|---|
-| `getAllFonts()` | Returns sorted array of all installed font names. Also caches font metadata (postScriptName, family, style) for use by `changeFont`. |
-| `setSubstituteFont(fontName)` | Sets the module-level substitute font target. |
-| `changeFont(allLayerDescriptors)` | Two-phase font replacement: (1) `remapFonts` for missing fonts, (2) `set textLayer` for installed fonts. Returns true if any fonts were changed. |
-
-### `validateMasterFile.js`
-
-| Function | Description |
-|---|---|
-| `validateDoc(appState)` | Unified validation entry point. Reads PSD as binary, fetches all layer descriptors in one bulk batchPlay, then runs: nested SO detection, font scanning (main doc + inside SOs), missing link detection, naming quality analysis. Returns structured results for the validation window. |
-| `getNestedSOData()` | Standalone nested SO scanner (diagnostic/debug). |
-| `extractFontsFromSO(buffer, uuid)` | Binary extraction of font names from inside a specific embedded SO. |
-| `findLinkedLayersInSO(buffer, uuid)` | Recursively scans inside an embedded SO for SoLE (linked external) layers. |
-
-### `psdParser.js`
-
-| Function | Description |
-|---|---|
-| `parsePsd(buffer)` | Parses a PSD/PSB binary buffer into layer records with names, bounds, and additional info block keys. |
-| `extractUuidFromBlock(buffer, offset, end)` | Extracts the UUID string from a liFD record in the PSD binary. |
+The result is a score from 0 to 100. Smart Object names are weighted most heavily (50%) since they're the primary translation targets. A high score means the PSD is well-prepared for translation; a low score suggests layer names may need cleanup in the PSD.
 
 ---
 
