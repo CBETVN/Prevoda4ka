@@ -1,10 +1,9 @@
-# LocalizationMaster
-
+# Prevoda4ka
 
 
 ## What Is This?
 
-**LocalizationMaster** is a **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD files using a pre-prepared Excel translation table.
+**Prevoda4ka** is a **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD files using a pre-prepared Excel translation table.
 
 ---
 
@@ -32,7 +31,7 @@
 ## Project Structure
 
 ```
-LocalizationMaster/
+Prevoda4ka/
 ├── src/
 │   ├── index.jsx              # UXP entry point
 │   ├── main.jsx               # Root App component — all state lives here
