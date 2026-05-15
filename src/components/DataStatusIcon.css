@@ -1,14 +1,15 @@
 .data-status {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   color: var(--font);
+  height: 150px;
 }
 
 .data-status-indicator {
-  width: 100%;
-  height: auto;
-  max-width: 100%;
+  width: auto;
+  height: 100%;
   display: block;
 }
 

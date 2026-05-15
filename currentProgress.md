@@ -578,6 +578,8 @@ Binary parsing is correct (same buffer, same 71 liFD records, same byte content)
 
 ### What's still TODO
 
+- CSS problem probably - DataStatusIcon image filckers on hover over ANY ui element that has hover property.
+
 - "Success prediction" bar (red to green gradient)
 - Potential optimization: scan GALI once for all UUIDs instead of per-SO
 - Fix Text Shrinking on Edit
