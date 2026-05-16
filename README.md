@@ -408,13 +408,6 @@ The result is a score from 0 to 100. Smart Object names are weighted most heavil
 
 
 
-## Known Issues / WIP Areas
 
-- `LoadFURLButton` is disabled (URL hardcoded to `null`)
-- Font shrink bug: workaround in `translateSmartObject` restores `impliedFontSize` via batchPlay after setting `textItem.contents`
-- Some diagnostic `console.log` calls remain, marked `// DELETE LATER`
-- `validateMasterFile.js` contains `KNOWN_STRUCTURAL_NAMES` — a hardcoded set of known PSD structural/scene names used for naming quality scoring. Should be made configurable or derived from the document.
-
----
 
 
