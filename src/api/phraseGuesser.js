@@ -27,7 +27,7 @@ export function guessThePhrase(layer, appState) {
   const enEntries   = appState.languageData?.["EN"];
   const langEntries = appState.languageData?.[appState.selectedLanguage];
   if (!enEntries || !langEntries){
-    console.log("guessThePhrase: missing language data for EN or selected language");
+    // console.log("guessThePhrase: missing language data for EN or selected language");
     return null;
 
   } 
@@ -36,9 +36,9 @@ export function guessThePhrase(layer, appState) {
   const normalizedEN = enEntries.map(e => _normalizeForMatch(e));
 
   const { candidates, container } = _buildPhraseCandidates(layer, normalizedEN);
-  console.log(`[guessThePhrase] "${layer.name}" candidates:`, candidates);
+  // console.log(`[guessThePhrase] "${layer.name}" candidates:`, candidates);
   if (candidates.length === 0) {
-    console.warn(`[guessThePhrase] "${layer.name}" — no candidates built, returning null`);
+    // console.warn(`[guessThePhrase] "${layer.name}" — no candidates built, returning null`);
     return null;
   }
 
@@ -64,7 +64,7 @@ export function guessThePhrase(layer, appState) {
 
   const translatedPhrase = parseRawPhrase(langEntries[bestIndex], "raw");
   if (!translatedPhrase) {
-    console.log(`"${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translation is missing from the Excel file`);
+    // console.log(`"${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translation is missing from the Excel file`);
     // console.log(`[guessThePhrase] "${layer.name}" — matched EN phrase "${enEntries[bestIndex]}" but translatedPhrase is empty after parseRawPhrase("strict")`);
 
     return null;
@@ -211,7 +211,7 @@ function _findPhraseContainer(layer, normalizedEN) {
           const bestPhraseWords = new Set(normalizedEN[bestIndex].split(/\s+/).filter(Boolean));
           const unexplained = [...compoundWords].filter(w => !bestPhraseWords.has(w));
           if (unexplained.length > 0) {
-            console.log("phraseContainer stop at:", current.name, "— unexplained words:", unexplained.join(", "));
+            // console.log("phraseContainer stop at:", current.name, "— unexplained words:", unexplained.join(", "));
             break;
           }
         }
@@ -221,11 +221,11 @@ function _findPhraseContainer(layer, normalizedEN) {
         // upgrades to "TOTAL CREDITS WON", all words still explained → keep climbing).
         seedPhraseIndex  = bestIndex;
         lastGoodAncestor = current;
-        console.log(`[climb] folder "${current.name}" best EN match: idx ${bestIndex} score ${bestScore.toFixed(2)}`);
+        // console.log(`[climb] folder "${current.name}" best EN match: idx ${bestIndex} score ${bestScore.toFixed(2)}`);
 
       } else if (seedPhraseIndex !== -1) {
         // Stop rule 2: score dropped below 0.5 after seeding
-        console.log("phraseContainer stop at:", current.name, "— score dropped to", bestScore);
+        // console.log("phraseContainer stop at:", current.name, "— score dropped to", bestScore);
         break;
       }
     }
@@ -234,7 +234,7 @@ function _findPhraseContainer(layer, normalizedEN) {
   }
 
   if (lastGoodAncestor) {
-    console.log("phraseContainer selected:", lastGoodAncestor.name);
+    // console.log("phraseContainer selected:", lastGoodAncestor.name);
     return lastGoodAncestor;
   }
 
@@ -244,7 +244,7 @@ function _findPhraseContainer(layer, normalizedEN) {
   current = layer.parent;
   while (current) {
     if (current.parent && !current.parent.parent) {
-      console.log("phraseContainer selected (fallback depth-2):", current.name);
+      // console.log("phraseContainer selected (fallback depth-2):", current.name);
       return current;
     }
     current = current.parent;

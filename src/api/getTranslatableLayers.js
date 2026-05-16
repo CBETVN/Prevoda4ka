@@ -108,6 +108,6 @@ export async function getTranslatableLayers(folderLayer, enPhrase) {
     }
     layers.push(layer);
   }
-  console.log(`[getTranslatableLayers] folder "${folderLayer.name}" → expected SO names from phrase: [${enPhraseLines ? [...enPhraseLines].join(", ") : "none"}] → matched ${layers.length} SO(s):`, layers.map(l => l.name));
+  // console.log(`[getTranslatableLayers] folder "${folderLayer.name}" → expected SO names from phrase: [${enPhraseLines ? [...enPhraseLines].join(", ") : "none"}] → matched ${layers.length} SO(s):`, layers.map(l => l.name));
   return { layers, soIdMap };
 }

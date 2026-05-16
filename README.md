@@ -314,10 +314,9 @@ All other layer types (shapes, fills, adjustments, masks) are excluded at the `g
 The main translation button. Translates every matching Smart Object and text layer in the entire document in one pass.
 
 **Before it starts, the plugin runs these checks (in order):**
-1. **Format check** — the active document must be a `.psd` or `.psb` file. Any other format (TIFF, PNG, etc.) is rejected with an alert.
-2. **Structure check** — the document must contain both Smart Objects and groups among its visible layers. If either is missing, it's not a valid master file for translation.
-3. **Language check** — a target language must be selected from the dropdown.
-4. **Data check** — the Excel translation file must be loaded.
+1. **Structure check** — the document must contain both Smart Objects and groups among its visible layers. If either is missing, it's not a valid master file for translation.
+2. **Language check** — a target language must be selected from the dropdown.
+3. **Data check** — the Excel translation file must be loaded.
 
 If all checks pass, translation proceeds:
 

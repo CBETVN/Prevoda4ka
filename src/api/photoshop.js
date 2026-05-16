@@ -477,7 +477,7 @@ async function translateSmartObjectRecursive(smartObject, translation) {
 
       // Guard: SO failed to open
       if (app.activeDocument.id === mainDocId) return;
-      console.log(`[SO-edit] now in: "${app.activeDocument.name}"`);
+      // console.log(`[SO-edit] now in: "${app.activeDocument.name}"`);
 
       await _translateSOContentsRecursive(translation, true);
 
@@ -613,7 +613,7 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 
   for (const nestedSO of uniqueNestedSOs) {
     const parentDocId = app.activeDocument.id;
-    console.log(`[SO-edit] about to open: "${nestedSO.name}" id=${nestedSO.id} in doc="${app.activeDocument.name}"`);
+    // console.log(`[SO-edit] about to open: "${nestedSO.name}" id=${nestedSO.id} in doc="${app.activeDocument.name}"`);
 
     // Select the layer by ID before opening — prevents Photoshop from
     // resolving the wrong layer when duplicate names exist at the same level.
@@ -627,7 +627,7 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 
     // Guard: SO failed to open
     if (app.activeDocument.id === parentDocId) continue;
-    console.log(`[SO-edit] now in: "${app.activeDocument.name}"`);
+        // console.log(`[SO-edit] now in: "${app.activeDocument.name}"`);
 
     await _translateSOContentsRecursive(translation, false);
     didRecurse = true;
@@ -650,7 +650,7 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 
     await cropCanvasToLayerBounds(allLayers, allInnerInfos);
   }
-  console.log(`[SO-edit] about to SAVE: "${app.activeDocument.name}"`);
+  // console.log(`[SO-edit] about to SAVE: "${app.activeDocument.name}"`);
 
   await app.activeDocument.save();
   app.activeDocument.closeWithoutSaving();

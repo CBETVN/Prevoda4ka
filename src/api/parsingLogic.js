@@ -218,7 +218,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   // e.g. "BUY\nBONUS" → ["BUY", "BONUS"]
   // These are used to match against child layer names inside the folder.
   const enLines = parseRawPhrase(matchedPhrase, "linesArray");
-  console.log("[processMatchedFolder] EN lines:", enLines);
+  // console.log("[processMatchedFolder] EN lines:", enLines);
   const transPhrase = translatedPhrase;
 
   // STEP 2: Guard — if there's no translation for this phrase, nothing to do.
@@ -229,7 +229,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   // The count of transLines may differ from enLines — e.g. EN has 3 words, DE merges two into one.
   // matchLayersToLines handles this with tail-anchoring logic.
   const transLines = parseRawPhrase(transPhrase, "linesArray");
-  console.log("[processMatchedFolder] translated lines:", transLines);
+  // console.log("[processMatchedFolder] translated lines:", transLines);
 
   // STEP 4: Get translatable child layers and soIdMap from single-source-of-truth API.
   // Handles recursive flatten, kind filter (SO + TEXT only), visibility filter, and SO dedup.
@@ -275,8 +275,8 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
   for (const [layerId, assignment] of result) {
     // null assignment = middle-gap layer or word-in-line duplicate, intentionally left untouched
     if (assignment === null) {
-      const child = childLayers.find(child => child.id === layerId);
-      if (child) console.log(`[skipped SO] "${child.layer.name}" → untouched (no translation assigned)`);
+      // const child = childLayers.find(child => child.id === layerId);
+      // if (child) console.log(`[skipped SO] "${child.layer.name}" → untouched (no translation assigned)`);
       continue;
     }
 
@@ -291,12 +291,12 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
       // instance of the same SO encountered in a previous folder or earlier in this folder),
       // skip it — translating any one instance updates all of them simultaneously.
       if (smartObjectID && processedIds.has(smartObjectID)) {
-        console.log(`[skipped SO] "${child.layer.name}" → already translated (same SO in earlier folder)`);
+        // console.log(`[skipped SO] "${child.layer.name}" → already translated (same SO in earlier folder)`);
         continue;
       }
 
       await ps.translateSmartObject(child.layer, text);
-      console.log(`[translated SO] "${child.layer.name}" → "${text}"`);
+      // console.log(`[translated SO] "${child.layer.name}" → "${text}"`);
       processedIds.add(await ps.getSOid(child.layer)); // Mark this SO as processed to prevent duplicate translations of its instances
 
 
@@ -312,8 +312,6 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
       if (smartObjectID) processedIds.add(smartObjectID);
       // console.log(`[processMatchedFolder] processedIds after adding:`, [...processedIds]);
 
-    } else if (child.layer.kind === constants.LayerKind.TEXT) {
-      console.log(`[translated Text] "${child.layer.name}" → "${text}"`);
     }
   }
 }
@@ -388,7 +386,7 @@ export async function generateSuggestions(layer, appState) {
   // const suggestion = extractMatchingPhrase(parentFolder, appState);
   const suggestion = phraseGuesser.guessThePhrase(layer, appState)?.translatedPhrase;
   if (suggestion) { 
-    console.log("Suggestion found:", suggestion);
+    // console.log("Suggestion found:", suggestion);
     return parsePhraseForSuggestions(suggestion);
   }else {
     app.showAlert("Parent folder does not match any EN phrase.");
