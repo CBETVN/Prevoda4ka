@@ -385,19 +385,14 @@ This means a single "Translate All" click handles arbitrarily deep nesting — S
 
 ### Font Replacement
 
-When you select a substitute font from the dropdown, the plugin replaces **ALL fonts** across the entire document with that font — not just missing ones. This runs automatically inside each SO during translation.
+When you select a substitute font from the dropdown, the plugin replaces **ALL fonts** across the entire document with that font — not just missing ones. 
 
-**Why replace everything, not just missing fonts:**
-Photoshop has a known bug: if you change the text content of a layer that just had its missing font fixed, the font fix gets destroyed — the text reverts to the missing font state. Replacing all fonts uniformly avoids this issue and ensures consistent behavior across all text layers.
 
 **How it works:**
 1. All missing fonts are replaced at once via Photoshop's batch font replacement (the only reliable way to fix missing fonts — individual layer edits don't work on missing-font layers)
 2. All remaining text layers that still have a different font are updated individually to the substitute, preserving text formatting (size, color, paragraph style, etc.)
 
 Font replacement always runs **before** text translation inside each SO.
-
-**Font size preservation:**
-Photoshop has a quirk: changing text content via the standard API resets the visual font size. After every text change, the plugin restores the original font size to keep the layout intact.
 
 ---
 
