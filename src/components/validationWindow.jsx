@@ -27,7 +27,7 @@ export const ValidationWindow = ({ dialog, results }) => {
         <sp-detail>NESTED SMART OBJECTS</sp-detail>
         {nestedSOs?.found ? (
           <>
-            <sp-body class="error">{nestedSOs.count} Smart Object(s) with nested SOs:</sp-body>
+            <sp-body class="error">{nestedSOs.count} unique Smart Object(s) with nested SOs:</sp-body>
             {nestedSOs.layers.slice(0, 3).map((l) => (
               <sp-body key={l.id}> • {l.name}</sp-body>
             ))}
