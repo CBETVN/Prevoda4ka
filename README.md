@@ -417,31 +417,4 @@ The result is a score from 0 to 100. Smart Object names are weighted most heavil
 
 ---
 
-## Quick Summary (Non-Technical)
-
-**Prevoda4ka** is a Photoshop plugin that automates the translation of text in PSD/PSB master files. All the requested core features are implemented and working:
-
-  - Document validation tool that catches problems before you start
-  - Full-document translation in one click
-  - Recursive Smart Object translation (SOs inside SOs, any depth)
-  - Automatic font replacement for documents with missing fonts
-  - Single-layer translation with suggestion generation
-  - Canvas cropping to content so nothing overflows after translation
-  - The plugin relies on layer names inside the PSD to match against the phrases in the EN column in the Excel table. Correct naming is the foundation behind the logic of this plugin.
-
-**What you need to run it:**
-- A PSD/PSB master file with properly named layers (Smart Objects and text layers named after the English words they contain — e.g. a layer showing "FREE SPINS" should be named `FREE SPINS`)
-- An Excel translation table where each row has the English phrase in one column and the translated versions in the other columns
-- Photoshop 24.2 or newer
-
-**Translate All** scans the entire document, finds every Smart Object and text layer whose name matches an English phrase from the Excel table, and replaces the text with the selected language's translation. If the same Smart Object appears multiple times in the document (linked instances), only one gets translated — the rest update automatically. Smart Objects that contain other Smart Objects inside them are handled recursively — the plugin opens them level by level, translates everything, and works its way back out. After translating text inside an SO, it crops the internal canvas to fit the new content.
-
-**Font Replacement** is meant for cases where the PSD was built on a different machine and the fonts aren't installed on yours. You pick a substitute font from the dropdown, and the plugin replaces ALL fonts in the document with that substitute — not just the missing ones. 
-
-**Validate Doc** is a pre-flight check you run before translating. It reads the PSD file and reports: nested Smart Objects, missing fonts (in the main document and inside SOs), missing linked files, and a naming quality score that tells you how well the layer names match the Excel table. If the score is low, it means some layers won't be found during translation and might need renaming.
-
-**Generate Suggestion + Translate Selected** is the manual path. Select a single layer, hit Generate Suggestion, and the plugin figures out which EN phrase it belongs to and shows you the translation. Pick one from the list (or type your own) and hit Translate Selected. Good for quick corrections after a full translation pass or for testing individual layers.
-
-**How the Excel and PSD connect:**
-Each English phrase in the Excel might be one word (`WIN`) or multiple lines (`FREE\nSPINS`). In the PSD, each line becomes a separate layer name inside a folder. The plugin matches layer names to Excel lines and assigns the correct translated line to each layer. Lines wrapped in `()` like `(SUPER)` mean "this layer exists but don't translate it." Lines in `[]` like `[Number]` are placeholders that get ignored entirely — they don't count as layers. If layer names match the Excel perfectly, translation is fully automatic. If names don't match, the plugin falls back to guessing by position in the layer stack, and if confidence is too low it skips the folder entirely to avoid mistakes.
 
