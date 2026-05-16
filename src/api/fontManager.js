@@ -33,7 +33,7 @@ export async function getAllFonts() {
     // console.log("All fonts from allFontsMap:", allFontsArray);
     //turns an array of font objects into a map keyed by font name, with values containing postScriptName, family, and style
     allFontsWithStyles = Object.fromEntries(allFontsArray.map(({name, ...rest}) => [name, rest]));
-    console.log("All fonts with styles:", allFontsWithStyles);
+    // console.log("All fonts with styles:", allFontsWithStyles);
     
     const fontsSet = new Set(); // Use a Set to avoid duplicates
     
