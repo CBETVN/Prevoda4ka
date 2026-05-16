@@ -3,7 +3,7 @@
 
 ## What Is This?
 
-**Prevoda4ka** is an **Adobe Photoshop UXP plugin** that automates the translation of text inside **Smart Objects and plain text layers** in PSD/PSB files using a pre-prepared Excel translation table.
+**Prevoda4ka** is an **Adobe Photoshop UXP plugin** that automates the translation of text in a PSD/PSB files using a pre-prepared Excel translation table. Translates **Smart Objects and plain text layers**. 
 
 ---
 
@@ -53,7 +53,7 @@ Prevoda4ka/
 │   │   ├── LoadFDiskButton.jsx           # Load Excel from disk via file picker
 │   │   ├── LoadFURLButton.jsx            # Load Excel from URL (disabled)
 │   │   ├── LanguageSelectorDropdown.jsx  # Dropdown to pick target language
-│   │   ├── FontSelectorDropdown.jsx      # Dropdown to pick substitute font for missing fonts
+│   │   ├── FontSelectorDropdown.jsx      # Dropdown to pick substitute font (replaces all fonts in doc)
 │   │   ├── DataStatusIcon.jsx            # Visual indicator: data loaded or not (earth icon)
 │   │   ├── TranslateAllButton.jsx        # Triggers translateAll() for entire document
 │   │   ├── TranslateSelectedButton.jsx   # Triggers translateSelected() for active layer
@@ -102,13 +102,13 @@ The `appState` object bundles relevant state into a single prop passed down to c
 
 ## UI Workflow
 
-The plugin UI is organized into three steps:
+The plugin UI is organized into 2 steps + one optional:
 
 **STEP 1 — Load & Configure:**
 - Load Excel translation file (from disk or URL)
 - Select target language from dropdown
-- Optionally select a substitute font (for documents with missing fonts)
-- Validate the document (opens a report dialog)
+- Optional: Select a substitute font (CAUTION!: replaces ALL fonts in the document with this font)
+- Optional: Analyze the document (opens a report dialog and reports missing fonts, nested SOs and naming quality)
 - Reset button reloads the plugin
 
 **STEP 2 — Translate All:**
@@ -354,25 +354,25 @@ This means a single "Translate All" click handles arbitrarily deep nesting — S
 
 ### Font Replacement
 
-When the master PSD was built on a different machine, the fonts used in text layers may not be installed on your system. Photoshop marks these as "missing fonts" and refuses to properly edit them. The plugin solves this with a two-phase font replacement that runs automatically inside each SO during translation (only when you've selected a substitute font from the dropdown).
+When you select a substitute font from the dropdown, the plugin replaces **ALL fonts** across the entire document with that font — not just missing ones. This runs automatically inside each SO during translation.
 
-**Phase 1 — Missing fonts:**
-All missing fonts in the document are replaced at once with the selected substitute. This is the only reliable way to fix missing fonts in Photoshop — editing individual layers won't work because Photoshop refuses to apply any changes to text with a missing font.
+**Why replace everything, not just missing fonts:**
+Photoshop has a known bug: if you change the text content of a layer that just had its missing font fixed, the font fix gets destroyed — the text reverts to the missing font state. Replacing all fonts uniformly avoids this issue and ensures consistent behavior across all text layers.
 
-**Phase 2 — Installed but wrong fonts:**
-After fixing missing fonts, any text layers that have an installed font (but not the substitute font) are updated individually. The plugin carefully preserves all text formatting (size, color, paragraph style, etc.) and only swaps the font name.
+**How it works:**
+1. All missing fonts are replaced at once via Photoshop's batch font replacement (the only reliable way to fix missing fonts — individual layer edits don't work on missing-font layers)
+2. All remaining text layers that still have a different font are updated individually to the substitute, preserving text formatting (size, color, paragraph style, etc.)
 
-**Why the order matters:**
-Photoshop has a known bug: if you change the text content of a layer that just had its missing font fixed, the font fix gets destroyed — the text reverts to the missing font state. To avoid this, when a layer had a missing font, the plugin writes the new text and the font in a single atomic operation instead of two separate steps. This is why font replacement always runs **before** text translation inside each SO.
+Font replacement always runs **before** text translation inside each SO.
 
 **Font size preservation:**
-Photoshop has another quirk: changing text content via the standard API resets the visual font size. After every text change, the plugin restores the original font size to keep the layout intact.
+Photoshop has a quirk: changing text content via the standard API resets the visual font size. After every text change, the plugin restores the original font size to keep the layout intact.
 
 ---
 
 ## Document Validation
 
-The **Validate Doc** button runs a comprehensive pre-translation analysis and shows the results in a popup dialog. Use it before translating to catch potential problems.
+The **Analyze Doc** button runs a comprehensive pre-translation analysis and shows the results in a popup dialog. Use it before translating to catch potential problems.
 
 The validation reads the PSD file both through Photoshop's API and by parsing the raw file bytes directly (which reveals information the API cannot access, like what's inside embedded Smart Objects).
 

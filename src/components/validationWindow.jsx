@@ -77,7 +77,7 @@ export const ValidationWindow = ({ dialog, results }) => {
             )}
           </>
         ) : (
-          <sp-body class="success">No missing linked Smart Objects found.</sp-body>
+          <sp-body class="success">No missing links found.</sp-body>
         )}
       </div>
 

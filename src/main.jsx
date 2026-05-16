@@ -225,7 +225,7 @@ export const App = () => {
           <div className="group">
             <sp-label className="group-label">STEP 2</sp-label>
             <div className="group-button-row">
-              <TranslateAllButton appState={appState} disabled={isProcessing || !isDataLoaded}/>
+              <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage}/>
             </div>
           </div>
 
