@@ -118,8 +118,7 @@ function buildNestedSOMapFast(buffer) {
   const galiEnd = Math.min(layerMaskEnd, buffer.byteLength);
 
   // console.log(`Skipped to GALI at offset ${galiStart}, scanning ${galiEnd - galiStart} bytes (${Math.round((galiEnd-galiStart)/buffer.byteLength*100)}% of file)`);
-  // console.log(`[DIAG] buffer.byteLength=${buffer.byteLength}, galiStart=${galiStart}, galiEnd=${galiEnd}`);
-  // console.log(`[DIAG] first 16 bytes at GALI: ${Array.from(bytes.slice(galiStart, galiStart + 16)).map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
+
 
   const tScan = Date.now();
   let sigCount = 0;
@@ -164,11 +163,9 @@ function buildNestedSOMapFast(buffer) {
       }
       j = recEnd - 1; // skip to end of record
     }
-    // console.log(`[DIAG] liFD breakdown: ${newUuids} new, ${dupUuids} duplicate, ${nullUuids} null UUIDs`);
     // console.log(`nestedSOMapFast: ${nRec} records scanned in ${Date.now()-tScan}ms`);
     i = blockStart + blockLen - 1;
   }
-  // console.log(`[DIAG] scan done: sigCount=${sigCount}, lnk blocks found=${Object.keys(map).length}`);
   return map;
 }
 
@@ -933,6 +930,17 @@ export async function validateDoc(appState = null) {
 
       const nestedSOMap = buildNestedSOMapFast(buffer);
 
+      // FIX: Build lyid→UUID map from binary layer records (SoLd/PlLd).
+      // DOM UUIDs (smartObjectMore.ID) get regenerated on revert/SO-edit,
+      // but binary SoLd UUIDs always match liFD UUIDs since both come from the same file.
+      const parsed = parsePsd(buffer);
+      const lyidToUuid = new Map();
+      for (const l of parsed.layers) {
+        if (l.isSmartObject && l.uuid && l.id != null) {
+          lyidToUuid.set(l.id, l.uuid);
+        }
+      }
+
       const allLayers = getAllLayers(doc.layers);
 
       const allDescriptors = await batchPlay(
@@ -957,7 +965,8 @@ export async function validateDoc(appState = null) {
         const desc = allDescriptors[i];
 
         if (layer.kind === 'smartObject') {
-          const uuid = desc?.smartObjectMore?.ID || null;
+          // FIX: use binary UUID (stable across revert) instead of DOM UUID
+          const uuid = lyidToUuid.get(layer.id) || desc?.smartObjectMore?.ID || null;
           layerMap.smartObjects.push({ layer, descriptor: desc, uuid });
         } else if (layer.kind === 'text') {
           layerMap.textLayers.push({ layer, descriptor: desc });
@@ -981,14 +990,6 @@ export async function validateDoc(appState = null) {
         if (nestedSOMap[so.uuid]) {
           nestedLayers.push({ name: so.layer.name, id: so.layer.id, uuid: so.uuid });
         }
-      }
-
-      const binaryUuids = Object.keys(nestedSOMap);
-      const domUuids = [...seenUuids];
-      const overlap = domUuids.filter(u => u in nestedSOMap).length;
-      console.log(`[DIAG-2a] DOM UUIDs: ${domUuids.length}, binary UUIDs: ${binaryUuids.length}, overlap: ${overlap}`);
-      if (domUuids.length > 0 && binaryUuids.length > 0 && overlap === 0) {
-        console.log(`[DIAG-2a] MISMATCH! sample DOM: "${domUuids[0]}", sample binary: "${binaryUuids[0]}"`);
       }
 
       // ── PHASE 2b: Font detection — main document ────────────────
@@ -1106,6 +1107,7 @@ export async function validateDoc(appState = null) {
     return emptyResult;
   }
 }
+
 
 
 // ── TEMPORARY BENCHMARK: individual vs bulk batchPlay ──────────────

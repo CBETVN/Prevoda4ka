@@ -171,7 +171,40 @@ Observed values: 127 bytes (test file "chance"), 194 bytes (previous test file).
 
 ## UUID Matching
 
-`batchPlay` `smartObjectMore.ID` matches the UUID stored in the liFD record reliably for read-only operations. For write operations (binary splice), use the triple-fallback approach (`soldUuid`, `bpId`, `sm.placed`) documented in AGENT_CONTEXT.md.
+### DOM UUIDs Are Unstable
+
+`batchPlay` `smartObjectMore.ID` is **NOT** stable. Photoshop regenerates these UUIDs in memory on:
+- **F12 Revert** — ALL Smart Object UUIDs change (full mismatch vs. binary)
+- **Editing a single SO** — that SO's UUID changes (count drops by 1)
+
+The binary file on disk is unchanged — liFD records still contain the original UUIDs. But the live DOM reports completely new ones.
+
+```
+Before revert: DOM UUIDs: 43, binary UUIDs: 43, overlap: 43
+After revert:  DOM UUIDs: 43, binary UUIDs: 43, overlap: 0
+```
+
+### Fix: Use Binary SoLd UUIDs via lyid
+
+Layer IDs (`lyid`) are stable across revert. The binary layer records contain both `lyid` and the UUID (from `SoLd`/`PlLd` descriptors). These SoLd UUIDs always match the liFD UUIDs since both come from the same file.
+
+```js
+// Parse binary layers — get { id: lyid, uuid: SoLd UUID } per SO layer
+const parsed = parsePsd(buffer);
+const lyidToUuid = new Map();
+for (const l of parsed.layers) {
+  if (l.isSmartObject && l.uuid && l.id != null) {
+    lyidToUuid.set(l.id, l.uuid);
+  }
+}
+
+// Match DOM layers by lyid → use binary UUID instead of DOM UUID
+const uuid = lyidToUuid.get(layer.id) || desc?.smartObjectMore?.ID || null;
+```
+
+Confirmed: SoLd↔liFD overlap stays 71/71 across revert while DOM↔liFD drops to 0.
+
+For write operations (binary splice), use the triple-fallback approach (`soldUuid`, `bpId`, `sm.placed`) documented in AGENT_CONTEXT.md.
 
 ---
 

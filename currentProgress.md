@@ -542,6 +542,7 @@ Scores how well the PSD's layer naming follows conventions. Requires XLSX data t
 
 ---
 
+
 ## Session — May 15 2026 — Validation returns wrong results after revert / SO edit
 
 ### BUG — Validation reports 0 nested SOs after F12 revert ⚠️ CONFIRMED — fix deferred
