@@ -100,25 +100,54 @@ The `appState` object bundles relevant state into a single prop passed down to c
 
 ---
 
-## UI Workflow
 
-The plugin UI is organized into 2 steps + one optional:
+## HOW TO USE
+
+The plugin UI is organized into 2 steps + one additional tool:
 
 **STEP 1 — Load & Configure:**
-- Load Excel translation file (from disk or URL)
+- Load Excel translation file
 - Select target language from dropdown
+
 - Optional: Select a substitute font (CAUTION!: replaces ALL fonts in the document with this font)
 - Optional: Analyze the document (opens a report dialog and reports missing fonts, nested SOs and naming quality)
 - Reset button reloads the plugin
 
-**STEP 2 — Translate All:**
-- Translates all matching Smart Objects and text layers in the document
-- Performs pre-flight guards: document format (PSD/PSB only), structure (must have both SOs and groups), language selection, and loaded data
+**STEP 2 — Hit Translate All Button:**
+- Translates all matching Smart Objects in the document
 
-**OPTIONAL — Manual Translation:**
-- Generate translation suggestions for a selected layer
-- Select from suggestions or type manual translation
-- Translate individual selected layer
+**OPTIONAL — Manual Translation (single layer):**
+1. Select exactly one layer in Photoshop (SO or text layer)
+2. Click **Generate Suggestion** — the plugin figures out which EN phrase this layer belongs to and shows the translated lines as clickable suggestions
+3. Click a suggestion to fill the text field, or type your own translation manually
+4. Click **Translate Selected** — applies whatever is in the text field to the selected layer
+
+
+These three things are fundamental for the plugin logic:
+
+1. **SO names must match their text content** — an SO displaying "WIN" must be named `WIN`(case insensitive - could be "Win", "WIN","wiN" etc.)
+2. **Stack order must match the phrase line order** — the Excel phrase `"YOU\nWIN\nFREE\nSPINS"` expects SOs stacked top-to-bottom as `YOU > WIN > FREE > SPINS`, not `WIN > YOU > SPINS > FREE`
+4. **Less unnecessary folders = more accuracy** Avoid wrapping phrases in extra subfolders when you can. The ideal scenario is — all SOs from one phrase in one folder. The plugin usually manages this, but the more noise there is, the greater the chance of mistakes.
+
+**Good**
+
+📁 introLandscape/
+  🔲 CONGRATULATIONS
+  🔲 YOU WIN
+  🔲 FREE
+  🔲 SPINS
+
+**Not so good**
+
+📁 introLandscape/
+   📁 Group 3/
+      🔲 CONGRATULATIONS
+      📁 Group 1/
+         🔲 YOU WIN
+   📁 FREE SPINS copy/      
+      🔲 FREE
+      🔲 SPINS
+
 
 ---
 
