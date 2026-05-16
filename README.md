@@ -130,15 +130,17 @@ These three things are fundamental for the plugin logic:
 4. **Less unnecessary folders = more accuracy** Avoid wrapping phrases in extra subfolders when you can. The ideal scenario is — all SOs from one phrase in one folder. The plugin usually manages this, but the more noise there is, the greater the chance of mistakes.
 
 **Good**
-
+```
 📁 introLandscape/
   🔲 CONGRATULATIONS
   🔲 YOU WIN
   🔲 FREE
   🔲 SPINS
+```
 
 **Not so good**
 
+```
 📁 introLandscape/
    📁 Group 3/
       🔲 CONGRATULATIONS
@@ -147,7 +149,7 @@ These three things are fundamental for the plugin logic:
    📁 FREE SPINS copy/      
       🔲 FREE
       🔲 SPINS
-
+```
 
 ---
 
