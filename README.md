@@ -106,12 +106,9 @@ The `appState` object bundles relevant state into a single prop passed down to c
 The plugin UI is organized into 2 steps + one additional tool for covering edge cases:
 
 **STEP 1 — Load & Configure:**
+- Open master file for translation
 - Load Excel translation file
 - Select target language from dropdown
-
-- Optional: Select a substitute font (CAUTION!: replaces ALL fonts in the document with this font)
-- Optional: Analyze the document (opens a report dialog and reports missing fonts, nested SOs and naming quality)
-- Reset button reloads the plugin
 
 **STEP 2 — Hit Translate All Button:**
 - Translates all matching Smart Objects in the document
@@ -121,6 +118,12 @@ The plugin UI is organized into 2 steps + one additional tool for covering edge 
 2. Click **Generate Suggestion** — the plugin figures out which EN phrase this layer belongs to and shows the translated lines as clickable suggestions
 3. Click a suggestion to fill the text field, or type your own translation manually
 4. Click **Translate Selected** — applies whatever is in the text field to the selected layer
+
+**Optional buttons and dropdowns**
+
+- Select a substitute font (CAUTION!: replaces ALL fonts in the document with this font)
+- Analyze Doc - analyze the document (opens a report dialog and reports missing fonts, nested SOs and naming quality)
+- Reset button reloads the plugin
 
 
 ## Naming Conventions - How to get the best results
