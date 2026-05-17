@@ -103,7 +103,7 @@ The `appState` object bundles relevant state into a single prop passed down to c
 
 ## HOW TO USE
 
-The plugin UI is organized into 2 steps + one additional tool:
+The plugin UI is organized into 2 steps + one additional tool for covering edge cases:
 
 **STEP 1 — Load & Configure:**
 - Load Excel translation file
@@ -123,11 +123,15 @@ The plugin UI is organized into 2 steps + one additional tool:
 4. Click **Translate Selected** — applies whatever is in the text field to the selected layer
 
 
+**Naming Conventions - How to get the best results**
+
+The plugin was built to handle translations without requiring major changes to the existing workflow, while also remaining compatible with older master files. Thats why instead of relying on predefined keys, it uses kind of heuristic approach for matching, sacrificing strict accuracy for compatibility and speed. That said, it achieves near-perfect results when a few simple rules are followed.
+
 These three things are fundamental for the plugin logic:
 
-1. **SO names must match their text content** — an SO displaying "WIN" must be named `WIN`(case insensitive - could be "Win", "WIN","wiN" etc.)
-2. **Stack order must match the phrase line order** — the Excel phrase `"YOU\nWIN\nFREE\nSPINS"` expects SOs stacked top-to-bottom as `YOU > WIN > FREE > SPINS`, not `WIN > YOU > SPINS > FREE`
-4. **Less unnecessary folders = more accuracy** Avoid wrapping phrases in extra subfolders when you can. The ideal scenario is — all SOs from one phrase in one folder. The plugin usually manages this, but the more noise there is, the greater the chance of mistakes.
+1. **SO names must match their text content** - an SO displaying "WIN" must be named `WIN`(case insensitive - could be "Win", "WIN","wiN" etc.) Layer names must be latin characters and in English!
+2. **Stack order must match the phrase line order** - the Excel phrase `"YOU\nWIN\nFREE\nSPINS"` expects SOs stacked top-to-bottom as `YOU > WIN > FREE > SPINS`, not `WIN > YOU > SPINS > FREE`
+4. **Less unnecessary folders = more accuracy** - Avoid wrapping phrases in extra subfolders when you can. The ideal scenario is - all SOs from one phrase in one folder. The plugin usually manages this, but the more noise there is, the greater the chance of mistakes.
 
 **Good**
 ```

@@ -18,6 +18,13 @@ export const ValidationWindow = ({ dialog, results }) => {
       ])]
     : [];
 
+  const affectedFontLayers = missingFonts?.found
+    ? [...new Set([
+        ...missingFonts.mainDoc.flatMap(f => f.usedInLayers || []),
+        ...missingFonts.smartObjects.map(so => so.soName)
+      ])]
+    : [];
+
   return (
     <form method="dialog" className="validationWindow">
       <sp-heading>Document Report</sp-heading>
@@ -56,6 +63,13 @@ export const ValidationWindow = ({ dialog, results }) => {
                 ))}
               </sp-table-body>
             </sp-table>
+            <sp-body class="error">{affectedFontLayers.length} affected layer(s):</sp-body>
+            {affectedFontLayers.slice(0, 3).map((name) => (
+              <sp-body key={name}> • {name}</sp-body>
+            ))}
+            {affectedFontLayers.length > 3 && (
+              <sp-body class="muted">...and {affectedFontLayers.length - 3} more</sp-body>
+            )}
           </>
         ) : (
           <sp-body class="success">All fonts are installed.</sp-body>
