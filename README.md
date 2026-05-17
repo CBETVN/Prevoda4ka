@@ -123,7 +123,7 @@ The plugin UI is organized into 2 steps + one additional tool for covering edge 
 4. Click **Translate Selected** — applies whatever is in the text field to the selected layer
 
 
-**Naming Conventions - How to get the best results**
+## Naming Conventions - How to get the best results
 
 The plugin was built to handle translations without requiring major changes to the existing workflow, while also remaining compatible with older master files. Thats why instead of relying on predefined keys, it uses kind of heuristic approach for matching, sacrificing strict accuracy for compatibility and speed. That said, it achieves near-perfect results when a few simple rules are followed.
 
