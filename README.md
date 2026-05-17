@@ -101,7 +101,7 @@ The `appState` object bundles relevant state into a single prop passed down to c
 ---
 
 
-## HOW TO USE
+## How To Use
 
 The plugin UI is organized into 2 steps + one additional tool for covering edge cases:
 
