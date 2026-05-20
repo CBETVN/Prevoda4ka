@@ -192,7 +192,7 @@ export async function translateSmartObject(smartObject, translation) {
       }
 
       // --- STEP 7: Crop the SO canvas to fit the translated text layer bounds ---
-      await cropCanvasToLayerBounds(allLayers, allInnerInfos);
+      await cropCanvasToLayerBounds();
 
       // --- STEP 8: Save and close the SO document ---
       // save() commits the changes back to the linked SO in the main PSD;
@@ -635,23 +635,24 @@ async function _translateSOContentsRecursive(translation, isTopLevel) {
 
   // ── NOTHING HAPPENED — bail without saving ──────────────────
   if (textLayers.length === 0 && !didRecurse) {
+    await cropCanvasToLayerBounds();
     app.activeDocument.closeWithoutSaving();
     return;
   }
 
-  // ── CROP (top level only), SAVE, CLOSE ──────────────────────
-  if (isTopLevel) {
-    if (!allInnerInfos) {
-      allInnerInfos = await batchPlay(
-        allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
-        { synchronousExecution: true }
-      );
-    }
+  // // ── CROP (top level only), SAVE, CLOSE ──────────────────────
+  // if (isTopLevel) {
+  //   if (!allInnerInfos) {
+  //     allInnerInfos = await batchPlay(
+  //       allLayers.map(l => ({ _obj: "get", _target: [{ _ref: "layer", _id: l.id }] })),
+  //       { synchronousExecution: true }
+  //     );
+  //   }
 
-    await cropCanvasToLayerBounds(allLayers, allInnerInfos);
-  }
+  //   await cropCanvasToLayerBounds();
+  // }
   // console.log(`[SO-edit] about to SAVE: "${app.activeDocument.name}"`);
-
+  await cropCanvasToLayerBounds();
   await app.activeDocument.save();
   app.activeDocument.closeWithoutSaving();
 }
@@ -757,80 +758,143 @@ export function isLayerAGroup(layer) {
  * @param {Layer[]} allLayers - Flat array of all layers inside the Smart Object.
  * @param {Object[]} allInnerInfos - batchPlay info objects for each layer, same order as allLayers.
  */
-export async function cropCanvasToLayerBounds(allLayers, allInnerInfos) {
+// export async function cropCanvasToLayerBounds(allLayers, allInnerInfos) {
 
-  // --- HELPER ---
-  // Checks if a layer has at least one enabled effect (drop shadow, stroke, gradient, etc.)
-  // layerEffects is an object where values can be arrays of effects or single effect objects
-  function hasEnabledEffects(layerEffects) {
-    if (!layerEffects) return false;
-    return Object.values(layerEffects).some(val => {
-      if (Array.isArray(val)) return val.some(e => e.enabled);             // e.g. multiple drop shadows
-      if (typeof val === 'object' && val !== null) return val.enabled === true; // e.g. single stroke
-      return false;
-    });
-  }
+//   // --- HELPER ---
+//   // Checks if a layer has at least one enabled effect (drop shadow, stroke, gradient, etc.)
+//   // layerEffects is an object where values can be arrays of effects or single effect objects
+//   function hasEnabledEffects(layerEffects) {
+//     if (!layerEffects) return false;
+//     return Object.values(layerEffects).some(val => {
+//       if (Array.isArray(val)) return val.some(e => e.enabled);             // e.g. multiple drop shadows
+//       if (typeof val === 'object' && val !== null) return val.enabled === true; // e.g. single stroke
+//       return false;
+//     });
+//   }
 
-  // --- PICK CROP TARGET ---
-  // First choice: a layer that has at least one enabled effect (more precise bounds due to effects)
-  // Fallback: the first text layer if no layer with effects is found
-  // ?? is the nullish coalescing operator — if the first find() returns undefined, try the second
-const cropTarget =
-    allLayers.find((l, i) => l.visible && hasEnabledEffects(allInnerInfos[i]?.layerEffects)) ??
-    allLayers.find(l => l.visible && l.kind === "text");
+//   // --- PICK CROP TARGET ---
+//   // First choice: a layer that has at least one enabled effect (more precise bounds due to effects)
+//   // Fallback: the first text layer if no layer with effects is found
+//   // ?? is the nullish coalescing operator — if the first find() returns undefined, try the second
+// const cropTarget =
+//     allLayers.find((l, i) => l.visible && hasEnabledEffects(allInnerInfos[i]?.layerEffects)) ??
+//     allLayers.find(l => l.visible && l.kind === "text");
 
-  // --- GUARD ---
-  // If neither a layer with effects nor a text layer was found, bail out gracefully
-  if (!cropTarget) {
-    console.warn("No suitable crop target found in:", app.activeDocument.name);
-    return;
-  }
+//   // --- GUARD ---
+//   // If neither a layer with effects nor a text layer was found, bail out gracefully
+//   if (!cropTarget) {
+//     console.warn("No suitable crop target found in:", app.activeDocument.name);
+//     return;
+//   }
 
-  // --- GET BOUNDS ---
-  // Destructure the pixel bounds of the chosen layer
-  const { left, top, right, bottom } = cropTarget.bounds;
+//   // --- GET BOUNDS ---
+//   // Destructure the pixel bounds of the chosen layer
+//   const { left, top, right, bottom } = cropTarget.bounds;
 
-  // --- BATCHPLAY: TWO OPERATIONS IN ONE CALL ---
-  await batchPlay([
+//   // --- BATCHPLAY: TWO OPERATIONS IN ONE CALL ---
+//   await batchPlay([
 
-    // OPERATION 1: Select the transparency of the crop target layer
-    // This creates a selection based on the layer's transparent pixels
-    // (not strictly needed for the crop but sets context)
-    {
-      _obj: "set",
-      _target: [{ _ref: "channel", _property: "selection" }],
-      to: {
-        _ref: [
-          { _ref: "channel", _enum: "channel", _value: "transparencyEnum" },
-          { _ref: "layer", _name: cropTarget.name }
-        ]
-      }
-    },
+//     // OPERATION 1: Select the transparency of the crop target layer
+//     // This creates a selection based on the layer's transparent pixels
+//     // (not strictly needed for the crop but sets context)
+//     {
+//       _obj: "set",
+//       _target: [{ _ref: "channel", _property: "selection" }],
+//       to: {
+//         _ref: [
+//           { _ref: "channel", _enum: "channel", _value: "transparencyEnum" },
+//           { _ref: "layer", _name: cropTarget.name }
+//         ]
+//       }
+//     },
 
-    // OPERATION 2: Crop the canvas to the exact pixel bounds of the crop target layer
-    // top/left/bottom/right come from cropTarget.bounds above
-    // angle: 0 — no rotation
-    // delete: true — deletes pixels outside the crop area
-    // AutoFillMethod, cropFillMode, cropAspectRatioModeKey, constrainProportions
-    //   — these are standard Photoshop crop options, kept at defaults
-    {
-      _obj: "crop",
-      to: {
-        _obj: "rectangle",
-        top:    { _unit: "pixelsUnit", _value: top },
-        left:   { _unit: "pixelsUnit", _value: left },
-        bottom: { _unit: "pixelsUnit", _value: bottom },
-        right:  { _unit: "pixelsUnit", _value: right }
+//     // OPERATION 2: Crop the canvas to the exact pixel bounds of the crop target layer
+//     // top/left/bottom/right come from cropTarget.bounds above
+//     // angle: 0 — no rotation
+//     // delete: true — deletes pixels outside the crop area
+//     // AutoFillMethod, cropFillMode, cropAspectRatioModeKey, constrainProportions
+//     //   — these are standard Photoshop crop options, kept at defaults
+//     {
+//       _obj: "crop",
+//       to: {
+//         _obj: "rectangle",
+//         top:    { _unit: "pixelsUnit", _value: top },
+//         left:   { _unit: "pixelsUnit", _value: left },
+//         bottom: { _unit: "pixelsUnit", _value: bottom },
+//         right:  { _unit: "pixelsUnit", _value: right }
+//       },
+//       angle: { _unit: "angleUnit", _value: 0 },
+//       delete: true,
+//       AutoFillMethod: 1,
+//       cropFillMode: { _enum: "cropFillMode", _value: "defaultFill" },
+//       cropAspectRatioModeKey: { _enum: "cropAspectRatioModeClass", _value: "pureAspectRatio" },
+//       constrainProportions: false
+//     }
+
+//   ], { synchronousExecution: true });
+
+//   // console.log(`Cropped canvas to layer: "${cropTarget.name}"`);
+// }
+
+// //trim transparent pixels
+// async function actionCommands() {
+//     let commands = [
+//         // Trim
+//         {
+//             "_obj": "trim",
+//             "bottom": true,
+//             "left": true,
+//             "right": true,
+//             "top": true,
+//             "trimBasedOn": {
+//                 "_enum": "trimBasedOn",
+//                 "_value": "transparency"
+//             }
+//         }
+//     ];
+//     return await require("photoshop").action.batchPlay(commands, {});
+// }
+
+
+
+
+// //reveal
+// async function actionCommands() {
+//     let commands = [
+//         // Reveal All
+//         {
+//             "_obj": "revealAll"
+//         }
+//     ];
+//     return await require("photoshop").action.batchPlay(commands, {});
+// }
+
+
+
+
+
+
+export async function cropCanvasToLayerBounds() {
+  console.log("cropCanvasToLayerBounds: starting");
+  await executeAsModal(async () => {
+    console.log("cropCanvasToLayerBounds: inside executeAsModal");
+    let commands = [
+      {
+        "_obj": "revealAll"
       },
-      angle: { _unit: "angleUnit", _value: 0 },
-      delete: true,
-      AutoFillMethod: 1,
-      cropFillMode: { _enum: "cropFillMode", _value: "defaultFill" },
-      cropAspectRatioModeKey: { _enum: "cropAspectRatioModeClass", _value: "pureAspectRatio" },
-      constrainProportions: false
-    }
-
-  ], { synchronousExecution: true });
-
-  // console.log(`Cropped canvas to layer: "${cropTarget.name}"`);
+      {
+        "_obj": "trim",
+        "bottom": true,
+        "left": true,
+        "right": true,
+        "top": true,
+        "trimBasedOn": {
+          "_enum": "trimBasedOn",
+          "_value": "transparency"
+        }
+      }
+    ];
+    const result = await require("photoshop").action.batchPlay(commands, {});
+    console.log("cropCanvasToLayerBounds: batchPlay result", JSON.stringify(result));
+  });
 }

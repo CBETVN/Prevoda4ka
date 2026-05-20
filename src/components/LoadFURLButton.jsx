@@ -9,7 +9,7 @@ export const LoadFURLButton = ({ onFileLoaded }) => {
     try {
       // Hardcoded URL for now - will be replaced with input field later
       const url = null; // e.g. "https://example.com/path/to/your/file.xlsx";
-      
+      // const url = "https://egtdigitalcom-my.sharepoint.com/:x:/r/personal/mariya_krasteva_egt-digital_com/_layouts/15/Doc.aspx?sourcedoc=%7B0AA1EB1B-FE45-4732-8635-0ECCDF9E8DED%7D&file=AllTranslatableAssets.xlsx&action=default&mobileredirect=true";
       if (!url) {
         console.log("No valid URL provided");
         app.showAlert("No URL provided");
