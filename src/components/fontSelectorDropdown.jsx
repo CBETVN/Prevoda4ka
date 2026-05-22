@@ -10,7 +10,7 @@ export const FontSelectorDropdown = ({
     console.log("Font selected:", newFont);
     onFontChange(newFont);
   };
-  const placeholder = "Select Font";
+  const placeholder = "Select Replacement Font";
   
   return (
     <div className="font-selector-dropdown">

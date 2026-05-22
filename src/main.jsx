@@ -8,6 +8,7 @@ import { SuggestionsContainer } from "./components/SuggestionsContainer";
 import { PhraseReference } from "./components/PhraseReference";
 import { LoadFDiskButton } from "./components/LoadFDiskButton";
 import { LoadFURLButton } from "./components/LoadFURLButton";
+import { SliceActionButton } from "./components/SliceActionButton";
 import { TranslateAllButton } from "./components/TranslateAllButton";
 import { LanguageSelectorDropdown } from "./components/LanguageSelectorDropdown";
 import { FontSelectorDropdown } from "./components/FontSelectorDropdown";
@@ -164,6 +165,29 @@ export const App = () => {
 
 
 
+  const handleCenterToSlice = async () => {
+    await core.executeAsModal(async () => {
+      const layer = app.activeDocument.activeLayers[0];
+      if (!layer || (layer.kind !== "smartObject" && layer.kind !== "text")) {
+        app.showAlert("Select a Smart Object or Text layer");
+        return;
+      }
+      await api.centerLayerToSlice();
+    }, { commandName: "Center to Slice" });
+  };
+
+  const handleFitToSlice = async () => {
+    await core.executeAsModal(async () => {
+      const layer = app.activeDocument.activeLayers[0];
+      if (!layer || (layer.kind !== "smartObject" && layer.kind !== "text")) {
+        app.showAlert("Select a Smart Object or Text layer");
+        return;
+      }
+      await api.scaleDownToSlice(layer);
+      await api.centerLayerToSlice();
+    }, { commandName: "Fit to Slice" });
+  };
+
   const handleValidateMasterFile = async () => {
     try {
       setIsProcessing(true);
@@ -219,14 +243,9 @@ export const App = () => {
                 }}
               />
             </div>
-          </div>
-
-          {/* ── Step 2: Translate All ── */}
-          <div className="group">
-            <sp-label className="group-label">STEP 2</sp-label>
-            <div className="group-button-row">
-              <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage}/>
-            </div>
+              <div className="translate-all-button-row">
+                <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage}/>
+              </div>
           </div>
 
           {/* ── Group 3: Generate Suggestions ── */}
@@ -254,6 +273,18 @@ export const App = () => {
                   onChange={setTextfieldValue}
                 />
                 <TranslateSelectedButton appState={appState} disabled={isProcessing || !selectedLanguage} label="Translate Selected" />
+              </div>
+            </div>
+          </div>
+
+                    {/* ── Group 4: Slice Actions ── */}
+          <div className="group">
+            <sp-label className="group-label">LAYOUT TOOLS</sp-label>
+            <div className="translate-selected-container">
+              <div className="group-button-row">
+                <SliceActionButton label="Center to Slice" onClick={handleCenterToSlice} disabled={isProcessing} />
+                <SliceActionButton label="Fit to Slice" onClick={handleFitToSlice} disabled={isProcessing} />
+
               </div>
             </div>
           </div>
