@@ -13,27 +13,25 @@ export const FontSelectorDropdown = ({
   const placeholder = "Select Replacement Font";
   
   return (
-    <div className="font-selector-dropdown">
-      <sp-picker
-        label="Selection type"
-        disabled={availableFonts.length === 0}
-        onchange={handleChange}
-      > 
-        <sp-menu slot="options">
-          <sp-menu-item value="" selected={selectedFont === ""}>
-            {placeholder}
+    <sp-picker
+      label="Selection type"
+      disabled={availableFonts.length === 0}
+      onchange={handleChange}
+    >
+      <sp-menu slot="options">
+        <sp-menu-item value="" selected={selectedFont === ""}>
+          {placeholder}
+        </sp-menu-item>
+        {availableFonts.map((font) => (
+          <sp-menu-item
+            key={font}
+            value={font}
+            selected={font === selectedFont}
+          >
+            {font}
           </sp-menu-item>
-          {availableFonts.map((font) => (
-            <sp-menu-item 
-              key={font} 
-              value={font}
-              selected={font === selectedFont}
-            >
-              {font}
-            </sp-menu-item>
-          ))}
-        </sp-menu>
-      </sp-picker>
-    </div>
+        ))}
+      </sp-menu>
+    </sp-picker>
   );
 };

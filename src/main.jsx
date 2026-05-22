@@ -210,6 +210,7 @@ export const App = () => {
   };
 
 
+
   return (
     <>
       {!webviewUI ? (
@@ -221,28 +222,33 @@ export const App = () => {
 
           {/* ── Step 1: Load & Configure ── */}
           <div className="group">
-            <sp-label className="group-label">STEP 1</sp-label>
-            <div className="group-button-row">
-              <LoadFDiskButton onFileLoaded={handleFileLoaded} />
-              <LoadFURLButton onFileLoaded={handleFileLoaded} />
-              <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
-              <ResetButton onClick={() => location.reload()} />
+              <div className="button-grid">
+                <LoadFDiskButton onFileLoaded={handleFileLoaded} />
+                <LoadFURLButton onFileLoaded={handleFileLoaded} />
+                <ValidateMFButton onClick={handleValidateMasterFile} disabled={isProcessing || !isDataLoaded} />
+                <ResetButton onClick={() => location.reload()} />
+              </div>
+              <div className="divider">
+                <sp-divider size="m"></sp-divider>
+              </div>
+              <div className="group-dropdowns">
+                <LanguageSelectorDropdown
+                  availableLanguages={availableLanguages}
+                  selectedLanguage={selectedLanguage}
+                  onLanguageChange={setSelectedLanguage}
+                />
+                <FontSelectorDropdown
+                  availableFonts={availableFonts}
+                  selectedFont={selectedFont}
+                  onFontChange={(font) => {
+                    setSelectedFont(font);
+                    setSubstituteFont(font);
+                  }}
+                />
             </div>
-            <div className="group-dropdowns">
-              <LanguageSelectorDropdown
-                availableLanguages={availableLanguages}
-                selectedLanguage={selectedLanguage}
-                onLanguageChange={setSelectedLanguage}
-              />
-              <FontSelectorDropdown
-                availableFonts={availableFonts}
-                selectedFont={selectedFont}
-                onFontChange={(font) => {
-                  setSelectedFont(font);
-                  setSubstituteFont(font);
-                }}
-              />
-            </div>
+              <div className="divider">
+                <sp-divider size="m"></sp-divider>
+              </div>
               <div className="translate-all-button-row">
                 <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage}/>
               </div>
@@ -250,7 +256,6 @@ export const App = () => {
 
           {/* ── Group 3: Generate Suggestions ── */}
           <div className="group">
-            <sp-label className="group-label">OPTIONAL</sp-label>
             <div className="translate-selected-container">
               <div className="group-button-row">
                 <GenerateSuggestionsButton onClick={handleGenerate} disabled={isProcessing || !selectedLanguage} />
@@ -266,27 +271,26 @@ export const App = () => {
                 onGenerate={handleGenerate}
                 isProcessing={isProcessing}
               />
-              <div className="group-button-row">
-                <TranslateSelectedTextField
-                  value={textfieldValue}
-                  placeholder="Select a suggestion to translate..."
-                  onChange={setTextfieldValue}
-                />
-                <TranslateSelectedButton appState={appState} disabled={isProcessing || !selectedLanguage} label="Translate Selected" />
-              </div>
+            </div>
+            <div className="input-button-row">
+              <TranslateSelectedTextField
+                value={textfieldValue}
+                placeholder="Select a suggestion to translate..."
+                onChange={setTextfieldValue}
+              />
+              <TranslateSelectedButton appState={appState} disabled={isProcessing || !selectedLanguage} label="Translate Selected" />
             </div>
           </div>
 
                     {/* ── Group 4: Slice Actions ── */}
           <div className="group">
-            <sp-label className="group-label">LAYOUT TOOLS</sp-label>
-            <div className="translate-selected-container">
-              <div className="group-button-row">
-                <SliceActionButton label="Center to Slice" onClick={handleCenterToSlice} disabled={isProcessing} />
-                <SliceActionButton label="Fit to Slice" onClick={handleFitToSlice} disabled={isProcessing} />
-
+            
+              <div className="layout-buttons">
+                <div className="group-dropdowns">
+                  <SliceActionButton label="Center to Slice" onClick={handleCenterToSlice} disabled={isProcessing} />
+                  <SliceActionButton label="Fit to Slice" onClick={handleFitToSlice} disabled={isProcessing} />
+                </div>
               </div>
-            </div>
           </div>
         </main>
       ) : (

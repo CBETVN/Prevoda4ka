@@ -81,6 +81,8 @@ main {
   width: 100%;
 }
 
+
+
 main > * {
   margin-top: 0;
 }
@@ -118,6 +120,171 @@ button:focus-visible {
 .button-group > * {
   margin-right: 0.5rem;
 }
+
+.button-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.button-grid > * {
+  width: calc(50% - 12px);
+  margin: 4px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.translate-all-button-row {
+  padding: 5px;
+  width: 95%;
+  box-sizing: border-box
+}
+.translate-all-button-row sp-action-button {
+  width: 100%;
+}
+
+
+
+
+
+.input-button-row {
+  display: flex;
+  width: 95%;
+  gap: 12px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.input-button-row > *:first-child {
+  flex: 4;
+  min-width: 0;
+  margin-right: 12px;
+}
+
+.input-button-row > *:last-child {
+  flex: 2;
+  min-width: 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* group container — all direct children centered */
+.group {
+  position: relative;
+  background-color: var(--group-bg);
+  border: 1px solid var(--uxp-host-border-color);
+  border-radius: 6px;
+  padding: 12x 12px 12px 12px;
+  margin-top: var(--group-spacing, 2.5em);
+  display: flex;
+  flex-direction: column;
+  align-items: center;          /* centers all children horizontally */
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin-left: 8px;
+  margin-right: 8px;
+  box-sizing: border-box;
+}
+
+.group > .group-label {
+  position: absolute;
+  top: -0.85em;
+  left: 0;
+  background-color: var(--group-label-bg);
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--uxp-host-text-color-secondary);
+}
+
+/* row of buttons inside a group — always centered */
+.group-button-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;  /* keeps buttons centered when row wraps */
+  align-items: center;      /* vertically aligns items in the row */
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px;            /* space around the whole row */
+}
+
+/* each button in the row — space on all four sides */
+.group-button-row > * {
+  margin: 4px;              /* outer spacing between buttons */
+  padding: 10px;            /* inner spacing inside each button */
+}
+
+
+/* vertical stack of dropdowns inside a group */
+.group-dropdowns {
+  display: flex;
+  flex-direction: row;
+  width: 95%;
+  box-sizing: border-box;
+  gap: 20px;          /* space between dropdowns only */
+}
+
+/* each dropdown wrapper */
+.group-dropdowns > * {
+  flex: 1;
+  min-width: 0;
+  margin: 4px 
+}
+
+
+.divider {
+  width: 95%;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+
+
+
+
+.layout-buttons {
+  width: 100%;
+  padding: 10px 0;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+
+/* ── ICON GROUP ─────────────────────────── */
+
+
+.group-icon {
+  position: relative;
+  background-color: var(--uxp-host-background-color);
+  border-radius: 6px;
+  margin-top: var(--group-spacing, 0.1em);  /* controls space above each group */
+  display: flex;
+  flex-direction: column;
+  align-items: center;          /* centers all children horizontally */
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin-left: 8px;
+  margin-right: 8px;
+  box-sizing: border-box;
+}
+
+
+
+
+
+
 
 /* ── Typography & misc ────────────────────────────── */
 
@@ -222,7 +389,7 @@ button:focus-visible {
 
 .translate-selected-container > * {
   min-width: 200px;
-  max-width: 400px;
+  max-width: 460px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -239,101 +406,6 @@ button:focus-visible {
 }
 
 /* ── Layout groups ────────────────────────────────── */
-
-/* group container — all direct children centered */
-.group {
-  position: relative;
-  background-color: var(--group-bg);
-  border: 1px solid var(--uxp-host-border-color);
-  border-radius: 6px;
-  padding: 12x 12px 12px 12px;
-  margin-top: var(--group-spacing, 2.5em);
-  display: flex;
-  flex-direction: column;
-  align-items: center;          /* centers all children horizontally */
-  gap: 8px;
-  width: calc(100% - 16px);
-  margin-left: 8px;
-  margin-right: 8px;
-  box-sizing: border-box;
-}
-
-.group > .group-label {
-  position: absolute;
-  top: -0.85em;
-  left: 0;
-  background-color: var(--group-label-bg);
-  padding: 2px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  color: var(--uxp-host-text-color-secondary);
-}
-
-/* row of buttons inside a group — always centered */
-.group-button-row {
-  display: flex;
-  flex-direction: row;
-  justify-content: center;  /* keeps buttons centered when row wraps */
-  align-items: center;      /* vertically aligns items in the row */
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 10px;            /* space around the whole row */
-}
-
-/* each button in the row — space on all four sides */
-.group-button-row > * {
-  margin: 4px;              /* outer spacing between buttons */
-  padding: 10px;            /* inner spacing inside each button */
-}
-
-.translate-all-button-row {
-  padding: 20px;
-}
-
-/* vertical stack of dropdowns inside a group */
-.group-dropdowns {
-  display: flex;
-  flex-direction: row;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-/* each dropdown wrapper */
-.group-dropdowns > * {
-  flex: 1;
-  min-width: 0;
-  margin: 4px 26px;
-}
-
-.group-dropdowns sp-picker {
-  width: 100%;
-}
-
-
-/* ── ICON GROUP ─────────────────────────── */
-
-
-.group-icon {
-  position: relative;
-  background-color: var(--uxp-host-background-color);
-  border-radius: 6px;
-  margin-top: var(--group-spacing, 0.1em);  /* controls space above each group */
-  display: flex;
-  flex-direction: column;
-  align-items: center;          /* centers all children horizontally */
-  gap: 8px;
-  width: calc(100% - 16px);
-  margin-left: 8px;
-  margin-right: 8px;
-  box-sizing: border-box;
-}
-
-
-
-
-
-
-
 
 
 
