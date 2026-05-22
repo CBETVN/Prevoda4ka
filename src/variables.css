@@ -28,6 +28,8 @@ html {
     --uxp-host-text-color-secondary: #e5e5e5;
     --uxp-host-link-hover-text-color: #ffffff;
     --uxp-host-label-text-color: #ffffff;
+    --group-bg: rgba(0, 0, 0, 0.25);
+    --group-label-bg: #454545;
   }
 
   @media (prefers-color-scheme: darkest) {
@@ -41,6 +43,8 @@ html {
     --uxp-host-text-color-secondary: #9b9b9b;
     --uxp-host-link-hover-text-color: #ffffff;
     --uxp-host-label-text-color: #ffffff;
+    --group-bg: rgba(0, 0, 0, 0.3);
+    --group-label-bg: #292929;
   }
 
   @media (prefers-color-scheme: light) {
@@ -54,12 +58,14 @@ html {
     --uxp-host-text-color-secondary: #424242;
     --uxp-host-link-hover-text-color: #424242;
     --uxp-host-label-text-color: #424242;
+    --group-bg: rgba(0, 0, 0, 0.08);
+    --group-label-bg: #a8a8a8;
   }
 
   @media (prefers-color-scheme: lightest) {
     --uxp-host-background-color: #f0f0f0;
     --uxp-host-text-color: #4b4b4b;
-    --uxp-host-border-color: #d1d1d1;
+    --uxp-host-border-color: #161616;
     --uxp-host-link-text-color: #4b9cf5;
     --uxp-host-widget-hover-background-color: #cecece;
     --uxp-host-widget-hover-text-color: #4b4b4b;

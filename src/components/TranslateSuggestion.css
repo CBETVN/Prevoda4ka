@@ -10,5 +10,5 @@
 /* Selected state - make it stand out */
 .translate-suggestion[selected] {
   background-color: rgba(255, 255, 255, 0.165) !important;
-  border-left: 3px solid #2680EB;
+  border-left: 3px solid var(--uxp-host-link-text-color);
 }

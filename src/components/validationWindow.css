@@ -56,7 +56,7 @@
 }
 
 .validationWindow .error {
-    color: #e34850;
+    color: var(--error);
 }
 
 .validationWindow .muted {
@@ -89,7 +89,7 @@
 }
 
 .validationWindow .missing-fonts-table sp-table-cell {
-    color: #e34850;
+    color: var(--error);
 }
 
 .validationWindow sp-button-group {

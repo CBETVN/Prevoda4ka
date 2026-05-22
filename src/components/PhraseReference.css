@@ -3,15 +3,13 @@
   flex-direction: column;
   gap: 12px;
   padding: 4px;
-  background-color: var(--background-color, #2d2d2d);
+  background-color: var(--uxp-host-background-color);
   border-radius: 10px;
 }
 
 #phrase-reference-textarea {
-  border: 1px dashed #888;
-  background: #7b00ff;
-  color: #fff;
-  /* min-width: 200px;
-  min-height: 200px; */
+  border: 1px dashed var(--uxp-host-border-color);
+  background: var(--uxp-host-widget-hover-background-color);
+  color: var(--uxp-host-text-color);
 }
 
