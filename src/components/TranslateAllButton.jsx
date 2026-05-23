@@ -5,9 +5,17 @@ import { translateAll } from "../api/parsingLogic";
 export const TranslateAllButton = ({
   appState,
   label = "Translate All",
-  disabled
+  disabled,
+  onComplete
 }) => {
-  const handleClick = () => {translateAll(appState, disabled);};
+  const handleClick = async () => {
+    try {
+      await translateAll(appState, disabled);
+    } catch (err) {
+      console.error("[TranslateAllButton] translateAll error:", err);
+    }
+      onComplete?.();
+  };
   return (
     <sp-action-button onClick={handleClick} disabled={disabled}>
       {label}

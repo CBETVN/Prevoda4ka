@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import ReactDOM from "react-dom/client";
 
 import { uxp, photoshop} from "./globals";
@@ -43,6 +43,16 @@ export const App = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [textfieldValue, setTextfieldValue] = useState("");
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimer = useRef(null);
+
+  function showToast(message) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastMessage(message);
+    setToastOpen(true);
+    toastTimer.current = setTimeout(() => setToastOpen(false), 2000);
+  }
 
   // Bundle all relevant state into a single object to pass to logic/helpers or child components
   const appState = {
@@ -250,7 +260,7 @@ export const App = () => {
                 <sp-divider size="m"></sp-divider>
               </div>
               <div className="translate-all-button-row">
-                <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage}/>
+                <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage} onComplete={() => showToast("Translation complete!")} />
               </div>
           </div>
 
@@ -297,6 +307,25 @@ export const App = () => {
         <div>
           <h1>Hello World</h1>
           <p>This is a Bolt WebView UI plugin.</p>
+        </div>
+      )}
+      {toastOpen && (
+        <div style={{
+          position: "fixed",
+          bottom: "32px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#0265DC",
+          color: "#fff",
+          padding: "12px 24px",
+          borderRadius: "8px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          zIndex: 9999,
+          minWidth: "200px",
+          textAlign: "center",
+          fontSize: "1em"
+        }}>
+          {toastMessage}
         </div>
       )}
     </>
