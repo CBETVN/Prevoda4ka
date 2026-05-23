@@ -93,36 +93,6 @@ export const App = () => {
   };
 
 
-// Depricated Guess the phrase button
-  // const handleGuessThePhrase = async () => {
-  //   const activeLayer = app.activeDocument.activeLayers[0];
-  //   if (!activeLayer) {
-  //     api.notify("No layer selected.");
-  //     return;
-  //   }
-  //   try {
-  //     setIsProcessing(true);
-  //     const result = api.guessThePhrase(activeLayer, appState);
-  //     if (!result) {
-  //       console.log("guessThePhrase: no match found");
-  //       api.notify("No matching phrase found.");
-  //       return;
-  //     }
-  //     console.log(`guessThePhrase result:`);
-  //     console.log(`  enPhrase:         "${result.enPhrase}"`);
-  //     console.log(`  translatedPhrase: "${result.translatedPhrase}"`);
-  //     console.log(`  confidence:       ${(result.confidence * 100).toFixed(0)}%`);
-  //     console.log(`  matchedCandidate: "${result.matchedCandidate}"`);
-  //     setTextfieldValue(result.translatedPhrase);
-  //   } catch (error) {
-  //     console.error("guessThePhrase error:", error);
-  //   } finally {
-  //     setIsProcessing(false);
-  //   }
-  // };
-
-
-
 
 
   // Generate suggestions from your logic
