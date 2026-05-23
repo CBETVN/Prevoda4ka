@@ -194,7 +194,6 @@ export const App = () => {
         return;
       }
       await api.scaleDownToSlice(layer);
-      await api.centerLayerToSlice();
     }, { commandName: "Fit to Slice" });
   };
 

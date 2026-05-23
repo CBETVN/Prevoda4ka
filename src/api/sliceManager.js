@@ -180,7 +180,7 @@ export async function scaleDownToSlice(layer) {
 
   const difference = calculateScaleDifference(layerDimensions, sliceDimensions);
   console.log("Scale differences (percent):", difference);
-  const scalePercent = (100 + Math.min(difference.widthDifference, difference.heightDifference)) * 0.9;
+  const scalePercent = (100 + Math.min(difference.widthDifference, difference.heightDifference)) * 0.90;
   console.log("Calculated scale percent:", scalePercent);
   if (scalePercent >= 90 && scalePercent <= 100) return;
 
@@ -199,6 +199,8 @@ export async function scaleDownToSlice(layer) {
     scale: { _unit: "percentUnit", _value: scalePercent },
     _options: { dialogOptions: "dontDisplay" }
   }], {});}
+
+  await centerLayerToBounds(layer, sliceInfo.bounds);
 }
 
 
