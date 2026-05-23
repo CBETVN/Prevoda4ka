@@ -370,21 +370,28 @@ export async function getSOid(layer) {
 
 
 
-// Tankes an array of SOs and returns only the unique SOs
+// Takes an array of SOs and returns only the unique SOs.
+// Uses bulk batchPlay to fetch all descriptors in one bridge round-trip
+// instead of N individual getSOid calls (1 round-trip vs N).
 export async function purgeSOInstancesFromArray(array) {
-  //Unique IDs
+  const soLayers = array.filter(layer => layer.kind === "smartObject");
+  if (soLayers.length === 0) return [];
+
+  // One batchPlay call for all SO layers — fetch descriptors in bulk
+  const allInfos = await batchPlay(
+    soLayers.map(layer => ({ _obj: "get", _target: [{ _ref: "layer", _id: layer.id }] })),
+    { synchronousExecution: true }
+  );
+
+  // Deduplicate in pure JS using the bulk results
   const uniqueSOids = new Set();
-  //Unique Layers
   const uniqueLayers = [];
 
-  for (const layer of array) {
-    // Check only SO layers as only SOs have the smartObjectMore.ID property that we rely on for uniqueness. Non-SO layers will be ignored and can appear multiple times without affecting the result.
-    if (layer.kind !== "smartObject") continue;  
-    
-    const layerSOid = await getSOid(layer);
-    
-    if (uniqueSOids.has(layerSOid)){continue;} 
-    else {uniqueSOids.add(layerSOid); uniqueLayers.push(layer);}
+  for (let i = 0; i < soLayers.length; i++) {
+    const layerSOid = allInfos[i]?.smartObjectMore?.ID || null;
+    if (uniqueSOids.has(layerSOid)) continue;
+    uniqueSOids.add(layerSOid);
+    uniqueLayers.push(soLayers[i]);
   }
 
   return uniqueLayers;
