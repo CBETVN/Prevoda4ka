@@ -284,8 +284,8 @@ export const App = () => {
             
               <div className="layout-buttons">
                 <div className="group-dropdowns">
-                  <SliceActionButton label="Center to SliceX" onClick={handleCenterToSlice} disabled={isProcessing} />
-                  <SliceActionButton label="Center to SliceY" onClick={handleCenterToSliceY} disabled={isProcessing} />
+                  <SliceActionButton label="Center to Slice X" onClick={handleCenterToSlice} disabled={isProcessing} />
+                  <SliceActionButton label="Center to Slice Y" onClick={handleCenterToSliceY} disabled={isProcessing} />
                   <SliceActionButton label="Fit to Slice" onClick={handleFitToSlice} disabled={isProcessing} />
                 </div>
               </div>
