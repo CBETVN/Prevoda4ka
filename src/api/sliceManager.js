@@ -102,25 +102,30 @@ async function findMySlice(layer) {
 }
 
 
-async function centerLayerToBounds(layer, targetBounds) {
+async function centerLayerToBounds(layer, targetBounds, axis) {
     const b = layer.bounds;
 
     const layerCenterX = (b.left + b.right) / 2;
     const layerCenterY = (b.top + b.bottom) / 2;
     const targetCenterX = (targetBounds.left + targetBounds.right) / 2;
     const targetCenterY = (targetBounds.top + targetBounds.bottom) / 2;
-
-    await layer.translate(targetCenterX - layerCenterX, 0);
+    if (axis === "x") {
+      await layer.translate(targetCenterX - layerCenterX, 0);
+    }else if (axis === "y") {
+      await layer.translate(0, targetCenterY - layerCenterY);
+    }else{
+      await layer.translate(targetCenterX - layerCenterX, targetCenterY - layerCenterY);
+    }
 }
 
 
-export async function centerLayerToSlice() {
+export async function centerLayerToSlice(axis) {
   const doc = app.activeDocument;
   const activeLayer = doc.activeLayers[0];
   const slice = await findMySlice(activeLayer);
   const sliceBounds = slice.bounds;
   console.log("Slice bounds:", sliceBounds);
-  await centerLayerToBounds(activeLayer, sliceBounds);
+  await centerLayerToBounds(activeLayer, sliceBounds, axis);
 }
 
 
@@ -200,7 +205,7 @@ export async function scaleDownToSlice(layer) {
     _options: { dialogOptions: "dontDisplay" }
   }], {});}
 
-  await centerLayerToBounds(layer, sliceInfo.bounds);
+  await centerLayerToBounds(layer, sliceInfo.bounds, "x");
 }
 
 
