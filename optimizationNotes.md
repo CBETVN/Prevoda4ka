@@ -401,3 +401,121 @@ The whole optimization story has one structural assumption and a few smaller one
 ---
 
 *Generated from conversation analysis of the repo at commit `0b7cadc`.*
+
+
+
+
+
+
+### Layer 2: `executionContext`
+
+The `executionContext` object has these relevant properties:
+
+| Property | Purpose |
+|---|---|
+| `executionContext.hostControl` | Sub-object for controlling Photoshop's host behavior (history, document state) |
+| `executionContext.isCancelled` | Boolean — `true` if the user clicked Cancel in Photoshop's progress dialog. Long-running operations should poll this. |
+| `executionContext.reportProgress` | Function to update the Photoshop progress bar (for very long operations) |
+
+For this codebase, only `hostControl` is used. The key method on `hostControl` is `suspendHistory`.
+
+**Important:** `executionContext` is only valid inside the `executeAsModal` callback. Do NOT store it or pass it outside the callback's lifetime — it becomes invalid once the modal returns.
+
+---
+
+### Layer 3: `suspendHistory` / `resumeHistory`
+
+```js
+const suspension = await executionContext.hostControl.suspendHistory({
+  documentID: app.activeDocument.id,
+  name: "Rename Layers"
+});
+```
+
+**What it does:** Tells Photoshop to stop recording individual history steps. Every `batchPlay` set/rename call that happens after this point will NOT create its own undo entry. Instead, all changes are grouped together under one single entry.
+
+**The `suspension` token:** `suspendHistory` returns a token object (`{ historySuspensionID: <number> }`). You MUST pass this exact token back to `resumeHistory`. Without it, Photoshop doesn't know which suspension to end.
+
+**The `name` parameter:** `"Rename Layers"` is the label that appears in the History panel as a single undo step. After the operation completes, the user sees one entry called "Rename Layers" instead of 500 individual "Set Layer" entries.
+
+**The `documentID` parameter:** Identifies which document's history to suspend. Must be `app.activeDocument.id` (an integer). This is critical — if the user switches documents mid-operation, you'd be suspending history on the wrong document without this.
+
+```js
+await executionContext.hostControl.resumeHistory(suspension, true);
+```
+
+**What it does:** Ends the history suspension and either commits or rolls back all changes made since `suspendHistory`.
+
+**The second argument is a plain boolean:**
+- `true` → **commit** — all changes become one undo step in the History panel. The user can Ctrl+Z to undo ALL of them at once.
+- `false` → **rollback** — all changes since `suspendHistory` are discarded, as if they never happened.
+
+**CRITICAL: Do NOT pass an object** like `{ commit: true }`. This crashes Photoshop silently. It must be a bare `true` or `false`.
+
+---
+
+### The `try/finally` Pattern
+
+```js
+try {
+  // ... all batchPlay mutations ...
+} finally {
+  await executionContext.hostControl.resumeHistory(suspension, true);
+}
+```
+
+**Why `finally` is mandatory:** If any code between `suspendHistory` and `resumeHistory` throws an exception, `resumeHistory` would never be called. This leaves Photoshop in a permanently suspended history state — the next operation that tries to suspend history will crash, and the History panel becomes unusable until the plugin is reloaded.
+
+`finally` guarantees `resumeHistory` runs whether the try block succeeds or throws. This is non-negotiable.
+
+**Note:** Even inside `finally`, we pass `true` (commit). This is a deliberate choice — if some renames succeeded and then something threw, we keep the partial work rather than rolling back everything. The user can Ctrl+Z the partial result. If you wanted atomic all-or-nothing behavior, you'd pass `false` in the catch and `true` at the end of try, but this codebase opts for commit-always.
+
+---
+
+### Complete Flow — What Happens at Runtime
+
+Here's the exact sequence when the user clicks "Rename All" with 500 layers:
+
+```
+1. User clicks button
+2. renameLayersNew("toAll") is called
+3. core.executeAsModal acquires the modal lock
+   → Photoshop is now locked; no other plugin or user action can modify the document
+4. executionContext is created by Photoshop and passed to our callback
+5. suspendHistory pauses history recording for the active document
+   → suspension token is stored
+6. getLayerDescriptors() runs batchPlay "get" calls to read all layer data
+   → This is a READ inside the modal. It could technically run outside,
+     but keeping it inside ensures no layer state changes between read and write.
+7. JS computes all new names (pure JS, zero Photoshop cost)
+8. One batchPlay "set" call renames ALL 500 layers at once
+   → Photoshop processes 500 rename descriptors but records ZERO history steps
+     (because history is suspended)
+9. One batchPlay "set" call restores collapsed state on groups
+   → Also records zero history steps
+10. resumeHistory(suspension, true) commits everything
+    → ONE history entry "Rename Layers" appears in the History panel
+    → User can Ctrl+Z to undo all 500 renames at once
+11. The async callback returns → executeAsModal releases the modal lock
+    → Photoshop is unlocked; user and other plugins can interact again
+```
+
+---
+
+### Rules for Any Agent Modifying This Pattern
+
+1. **All document writes (`_obj: "set"`, `_obj: "delete"`, etc.) MUST be inside `executeAsModal`.** Calling them outside will throw a "no modal scope" error.
+
+2. **All document reads (`_obj: "get"`) CAN run outside `executeAsModal`.** Moving reads outside reduces modal hold time and improves responsiveness. The current code keeps reads inside for atomicity (no state change between read and write), which is a valid tradeoff.
+
+3. **`suspendHistory` and `resumeHistory` MUST be paired.** Every `suspendHistory` call must have exactly one matching `resumeHistory`. Use `try/finally` to guarantee this.
+
+4. **`resumeHistory`'s second argument is a bare boolean.** `true` = commit, `false` = rollback. Not an object. Not optional.
+
+5. **The `suspension` token from `suspendHistory` must be passed to `resumeHistory`.** Do not discard it or reconstruct it.
+
+6. **`executionContext` is only valid inside the callback.** Do not store it in module-level variables or closures that outlive the modal.
+
+7. **Keep modal scope minimal.** The modal blocks all other plugins and user interaction. Do computation (name building, filtering, validation) outside or before the write phase when possible.
+
+8. **`batchPlay` with `{ synchronousExecution: true }` inside modal is the standard pattern.** This ensures each batchPlay completes before the next line runs. Without it, batchPlay returns a Promise that resolves when Photoshop finishes — still works, but `synchronousExecution: true` avoids race conditions inside modal scope.
