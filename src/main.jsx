@@ -182,9 +182,26 @@ export const App = () => {
         app.showAlert("Select a Smart Object or Text layer");
         return;
       }
-      await api.centerLayerToSlice();
-    }, { commandName: "Center to Slice" });
+      await api.centerLayerToSlice("x");
+    }, { commandName: "Center to SliceX" });
   };
+
+
+
+
+  const handleCenterToSliceY = async () => {
+    await core.executeAsModal(async () => {
+      const layer = app.activeDocument.activeLayers[0];
+      if (!layer || (layer.kind !== "smartObject" && layer.kind !== "text")) {
+        app.showAlert("Select a Smart Object or Text layer");
+        return;
+      }
+      await api.centerLayerToSlice("y");
+    }, { commandName: "Center to SliceY" });
+  };
+
+
+
 
   const handleFitToSlice = async () => {
     await core.executeAsModal(async () => {
@@ -263,6 +280,7 @@ export const App = () => {
               </div>
           </div>
 
+
           {/* ── Group 3: Generate Suggestions ── */}
           <div className="group">
             <div className="translate-selected-container">
@@ -296,18 +314,14 @@ export const App = () => {
             
               <div className="layout-buttons">
                 <div className="group-dropdowns">
-                  <SliceActionButton label="Center to Slice" onClick={handleCenterToSlice} disabled={isProcessing} />
+                  <SliceActionButton label="Center to SliceX" onClick={handleCenterToSlice} disabled={isProcessing} />
+                  <SliceActionButton label="Center to SliceY" onClick={handleCenterToSliceY} disabled={isProcessing} />
                   <SliceActionButton label="Fit to Slice" onClick={handleFitToSlice} disabled={isProcessing} />
                 </div>
               </div>
           </div>
         </main>
-      ) : (
-        <div>
-          <h1>Hello World</h1>
-          <p>This is a Bolt WebView UI plugin.</p>
-        </div>
-      )}
+      ) : null}
       {toastOpen && (
         <div style={{
           position: "fixed",
