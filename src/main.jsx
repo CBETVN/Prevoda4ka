@@ -174,13 +174,23 @@ export const App = () => {
 
 
   const handleFitToSlice = async () => {
-    await core.executeAsModal(async () => {
+    await core.executeAsModal(async (executionContext) => {
       const layer = app.activeDocument.activeLayers[0];
       if (!layer || (layer.kind !== "smartObject" && layer.kind !== "text")) {
         app.showAlert("Select a Smart Object or Text layer");
         return;
       }
-      await api.scaleDownToSlice(layer);
+
+      const suspension = await executionContext.hostControl.suspendHistory({
+        documentID: app.activeDocument.id,
+        name: "Fit to Slice"
+      });
+
+      try {
+        await api.scaleDownToSlice(layer);
+      } finally {
+        await executionContext.hostControl.resumeHistory(suspension, true);
+      }
     }, { commandName: "Fit to Slice" });
   };
 

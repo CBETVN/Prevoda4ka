@@ -11,7 +11,6 @@ const { app } = photoshop;
 
 
 
-
 async function getUserGeneratedSlices(doc) {
   try {
     const docResult = await batchPlay([
@@ -174,6 +173,7 @@ async function hasActiveEffects(layerID) {
 }
 
 
+
 export async function scaleDownToSlice(layer) {
   const sliceInfo = await findMySlice(layer);
   const sliceDimensions = sliceInfo?.dimensions;
@@ -189,7 +189,6 @@ export async function scaleDownToSlice(layer) {
   console.log("Calculated scale percent:", scalePercent);
   if (scalePercent >= 90 && scalePercent <= 100) return;
 
-  //   console.log("Calculated scale percent:", scalePercent);
   await batchPlay([{
     _obj: "transform",
     freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
