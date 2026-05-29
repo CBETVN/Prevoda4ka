@@ -183,11 +183,17 @@ export async function scaleDownToSlice(layer) {
   const layerDimensions = layerBounds.bounds;
   if (!layerDimensions) { console.log("Cannot read layer transparency"); return; }
 
+  // console.log("── scaleDownToSlice ──");
+  // console.log("Layer bounds BEFORE:", JSON.stringify(layerDimensions));
+  // console.log("Layer boundsNoEffects:", JSON.stringify(layerBounds.boundsNoEffects));
+
+  // console.log("Slice dimensions:", JSON.stringify(sliceDimensions));
+
   const difference = calculateScaleDifference(layerDimensions, sliceDimensions);
-  console.log("Scale differences (percent):", difference);
+  // console.log("Scale differences (percent):", difference);
   const scalePercent = (100 + Math.min(difference.widthDifference, difference.heightDifference)) * 0.90;
-  console.log("Calculated scale percent:", scalePercent);
-  if (scalePercent >= 90 && scalePercent <= 100) return;
+  // console.log("Calculated scale percent:", scalePercent);
+  if (scalePercent >= 90 && scalePercent <= 102) return;
 
   await batchPlay([{
     _obj: "transform",
@@ -196,6 +202,11 @@ export async function scaleDownToSlice(layer) {
     height: { _unit: "percentUnit", _value: scalePercent },
     _options: { dialogOptions: "dontDisplay" }
   }], {});
+  const boundsAfter = layer.bounds;
+  // console.log("Layer bounds AFTER transform:", JSON.stringify({
+  //   width: boundsAfter.right - boundsAfter.left,
+  //   height: boundsAfter.bottom - boundsAfter.top
+  // }));
   const hasFX = await hasActiveEffects(layer.id);
   if (hasFX && Number.isNaN(scalePercent) === false) {
   await batchPlay([{
