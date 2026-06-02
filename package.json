@@ -1,7 +1,7 @@
 {
   "name": "prevoda4ka", 
   "private": true,
-  "version": "1.1.1",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "dev": "cross-env MODE=dev vite build --watch",
