@@ -577,6 +577,105 @@ Binary parsing is correct (same buffer, same 71 liFD records, same byte content)
 
 ---
 
+## Session — June 30 2026 — Text becomes HUGE after translation (the double-scaling bug)
+
+### BUG — Translated text renders massively oversized for some users ⚠️ ROOT CAUSE FOUND
+
+**Symptom:** After translation, certain text layers render at 2–3× their intended visual size. The text is correct but physically huge. Only two users experience this — one on Mac, one on Windows. Platform-independent. Only happens on specific PSD files.
+
+**Why only specific users?** The bug is gated by `fontWasMissing` — it only triggers for users who don't have the PSD's fonts installed. Users with the fonts installed take the normal write path, which works correctly.
+
+**Why only specific files?** Only files where the designer used Photoshop's free-transform to scale text layers (i.e. layers with a non-trivial `transform` matrix). Files where text was set at the correct base size without free-transform scaling are unaffected because `transform ≈ 1.0`.
+
+**Root cause — `impliedFontSize` written as `size` while the transform matrix survives**
+
+Every text layer in a PSD can have two size components:
+
+| Property | What it is | Example (CONGRATULATIONS layer) |
+|---|---|---|
+| `size` (base) | The point size set in the character panel | 19pt |
+| `transform` | A free-transform matrix applied on top | yy ≈ 3.15 |
+| `impliedFontSize` | `size × transform_scale` — the visual size | 59.87pt |
+
+Both the flat `translateSmartObject` and recursive `_translateSOContentsRecursive` read `impliedFontSize` as "the size to restore":
+
+```js
+// photoshop.js — line 135 (flat) and line 552 (recursive)
+const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
+```
+
+**The normal write path (font installed) — works correctly:**
+```
+textItem.contents = translation     → PS resets the transform to identity
+restore size to impliedFontSize     → visual = 59.87 × 1.0 = 59.87pt  ✓
+```
+`textItem.contents` destroys the transform (the known shrink behavior). The code compensates by restoring `impliedFontSize` as the new `size`. Since transform is gone, `59.87 × 1 = 59.87pt` visual. Correct.
+
+**The atomic write path (font was missing) — THE BUG:**
+```
+set textLayer with size=impliedFontSize, NO transform specified
+→ PS keeps the existing transform (never touched by the atomic write)
+→ visual = 59.87 × 3.15 = ~188pt  ← HUGE
+```
+
+The atomic write at `photoshop.js:568-589` (recursive) / `photoshop.js:148-169` (flat):
+```js
+to: {
+  _obj: "textLayer",
+  textKey: translation,
+  textStyleRange: [{
+    _obj: "textStyleRange",
+    from: 0,
+    to: translation.length,
+    textStyle: {
+      _obj: "textStyle",
+      fontName: remappedFontName,
+      fontStyleName: remappedFontStyle,
+      size: { _unit: "pointsUnit", _value: originalSize }  // ← impliedFontSize (59.87)
+    }
+  }]
+  // ← NO transform property — PS keeps the existing 3.15× matrix
+}
+```
+
+The atomic write bypasses `textItem.contents` (to avoid font destruction — see "Missing font replacement" session notes), which also means it bypasses the transform reset. It sets `size` to `impliedFontSize` (which already bakes in the transform scaling), but the transform matrix is still sitting on the layer untouched. Result: **size × transform is applied twice** → `base_size × transform²`.
+
+**Full chain for CONGRATULATIONS example:**
+```
+base size = 19pt, transform.yy = 3.15, impliedFontSize = 59.87pt
+
+Normal path:  textItem.contents resets transform → size = 59.87 × 1.0  = 59.87pt  ✓
+Atomic path:  transform survives                 → size = 59.87 × 3.15 = 188.6pt  ✗ HUGE
+```
+
+**The `fontWasMissing` gate (`photoshop.js:556`):**
+```js
+const fontWasMissing = REPLACE_MISSING_FONTS && layerHasMissingFont(preRemapInfos[i]);
+```
+This checks the PRE-remap snapshot. Even if `changeFont()` successfully remapped the missing font in STEP B, the code still enters the atomic write path because it remembers the font was missing before the remap. This is intentional (the atomic write is needed to preserve the remapped font), but it means the transform handling difference between the two paths is always in play for missing-font layers.
+
+**Fix options:**
+
+**Option A — use base `size` instead of `impliedFontSize`:**
+```js
+const originalSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.size._value;
+// instead of .impliedFontSize._value
+```
+Simplest fix. The atomic write sets the base size (19pt), PS keeps the transform (3.15×), visual = 19 × 3.15 = 59.87pt. Correct.
+
+**Option B — include the transform in the atomic write:**
+```js
+const layerTransform = allInnerInfos[i].textKey.transform;
+// include in the batchPlay descriptor alongside textKey + textStyleRange
+```
+Preserves the layer's original structure more faithfully but more complex.
+
+**Affected code locations:**
+- `photoshop.js` line 135 + 164 (flat `translateSmartObject`)
+- `photoshop.js` line 552 + 584 (recursive `_translateSOContentsRecursive`)
+
+---
+
 ### What's still TODO
 
 - CSS problem probably - DataStatusIcon image filckers on hover over ANY ui element that has hover property.
