@@ -45,6 +45,7 @@ export const App = () => {
   const [textfieldValue, setTextfieldValue] = useState("");
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [forceUppercase, setForceUppercase] = useState(false);
   const toastTimer = useRef(null);
 
   function showToast(message) {
@@ -63,6 +64,7 @@ export const App = () => {
   availableFonts,
   selectedFont,
   suggestionTextfieldValue: textfieldValue,
+  forceUppercase,
   // ...add more as needed
   };
 
@@ -256,6 +258,14 @@ export const App = () => {
                 <sp-divider size="m"></sp-divider>
               </div>
               <div className="translate-all-button-row">
+                <div className="allcaps-checkbox">
+                <sp-checkbox
+                  checked={forceUppercase}
+                  onChange={(e) => setForceUppercase(e.target.checked)}
+                >
+                  ALLCAPS
+                  </sp-checkbox>
+                </div>
                 <TranslateAllButton appState={appState} disabled={isProcessing || !selectedLanguage} onComplete={() => showToast("Translation complete!")} />
               </div>
           </div>

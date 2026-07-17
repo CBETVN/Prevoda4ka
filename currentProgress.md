@@ -579,7 +579,7 @@ Binary parsing is correct (same buffer, same 71 liFD records, same byte content)
 
 ## Session — June 30 2026 — Text becomes HUGE after translation (the double-scaling bug)
 
-### BUG — Translated text renders massively oversized for some users ⚠️ ROOT CAUSE FOUND
+### BUG — Translated text renders massively oversized for some users ⚠️ HYPOTHESIS — NOT YET CONFIRMED
 
 **Symptom:** After translation, certain text layers render at 2–3× their intended visual size. The text is correct but physically huge. Only two users experience this — one on Mac, one on Windows. Platform-independent. Only happens on specific PSD files.
 
@@ -673,6 +673,86 @@ Preserves the layer's original structure more faithfully but more complex.
 **Affected code locations:**
 - `photoshop.js` line 135 + 164 (flat `translateSmartObject`)
 - `photoshop.js` line 552 + 584 (recursive `_translateSOContentsRecursive`)
+
+---
+
+### Diagnostic log plan — to be added BEFORE any fix
+
+The hypothesis above is plausible but unconfirmed. Before touching any logic, add read-only diagnostic logs to answer the following questions:
+
+1. Does `textKey.transform` actually have a non-trivial scale (yy ≈ 3.15) on the affected layers?
+2. After the **atomic write**, does the transform survive on the layer descriptor?
+3. After `textItem.contents` (**normal path**), does the transform actually get reset to identity?
+4. Is `changeFont` actually firing and doing a remap, or returning early?
+5. Are `size` and `impliedFontSize` actually different before each write?
+
+**Log 1 — Pre-write snapshot** (both paths)
+
+Where: right after `originalSize` is computed, before the `if (fontWasMissing)` branch — in both flat (~line 137) and recursive (~line 554).
+
+```js
+const _preWriteTransform = allInnerInfos[i].textKey?.transform;
+const _baseSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.size._value;
+const _impliedSize = allInnerInfos[i].textKey.textStyleRange[0].textStyle.impliedFontSize._value;
+console.log(`[DIAG-size] "${layer.name}" | fontWasMissing=${fontWasMissing} | size=${_baseSize} | impliedFontSize=${_impliedSize} | transform.xx=${_preWriteTransform?.xx?.toFixed(3)} | transform.yy=${_preWriteTransform?.yy?.toFixed(3)}`);
+```
+
+Answers questions 1 and 5.
+
+**Log 2 — After atomic write** (re-fetch, read-only)
+
+Where: immediately after the atomic `batchPlay` call in the `fontWasMissing` branch — both flat and recursive.
+
+```js
+const _postAtomicDesc = await batchPlay(
+  [{ _obj: "get", _target: [{ _ref: "layer", _id: layer.id }] }],
+  { synchronousExecution: true }
+);
+const _postTx = _postAtomicDesc[0].textKey?.transform;
+const _postSize = _postAtomicDesc[0].textKey?.textStyleRange[0]?.textStyle?.size?._value;
+const _postImplied = _postAtomicDesc[0].textKey?.textStyleRange[0]?.textStyle?.impliedFontSize?._value;
+console.log(`[DIAG-atomic-post] "${layer.name}" | size=${_postSize} | impliedFontSize=${_postImplied} | transform.xx=${_postTx?.xx?.toFixed(3)} | transform.yy=${_postTx?.yy?.toFixed(3)}`);
+```
+
+Answers question 2 — did the transform survive the atomic write?
+
+**Log 3 — After `textItem.contents`, before size restore** (normal path)
+
+Where: between `layer.textItem.contents = translation` and the size-restore `batchPlay` — both flat and recursive.
+
+```js
+const _postContentsDesc = await batchPlay(
+  [{ _obj: "get", _target: [{ _ref: "layer", _id: layer.id }] }],
+  { synchronousExecution: true }
+);
+const _postCTx = _postContentsDesc[0].textKey?.transform;
+const _postCSize = _postContentsDesc[0].textKey?.textStyleRange[0]?.textStyle?.size?._value;
+const _postCImplied = _postContentsDesc[0].textKey?.textStyleRange[0]?.textStyle?.impliedFontSize?._value;
+console.log(`[DIAG-normal-post-contents] "${layer.name}" | size=${_postCSize} | impliedFontSize=${_postCImplied} | transform.xx=${_postCTx?.xx?.toFixed(3)} | transform.yy=${_postCTx?.yy?.toFixed(3)}`);
+```
+
+Answers question 3 — does `textItem.contents` actually kill the transform?
+
+**Log 4 — Inside `changeFont`** (`fontManager.js`)
+
+Where: at the point where the function decides whether to proceed with the remap — after scanning for missing fonts, before returning.
+
+```js
+console.log(`[DIAG-changeFont] substituteFont="${substituteFont}" | missing font count=<N>`);
+```
+
+Answers question 4 — is the remap actually happening?
+
+**Summary table:**
+
+| Log | Location | Answers |
+|-----|----------|---------|
+| 1 | Before `if (fontWasMissing)` — both flat + recursive | Are size ≠ impliedFontSize? Is transform non-trivial? |
+| 2 | After atomic batchPlay — both flat + recursive | Does transform survive the atomic write? |
+| 3 | After `textItem.contents`, before size restore — both flat + recursive | Does `textItem.contents` reset the transform? |
+| 4 | Inside `changeFont` — fontManager.js | Is the remap actually firing? |
+
+No logic is touched by any of these — all are pure read + log.
 
 ---
 
