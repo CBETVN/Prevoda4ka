@@ -277,7 +277,8 @@ button:focus-visible {
 
 .group-icon {
   position: relative;
-  background-color: var(--uxp-host-background-color);
+  background-color: #242424;
+  overflow: hidden;
   border-radius: 6px;
   margin-top: var(--group-spacing, 0.1em);  /* controls space above each group */
   display: flex;

@@ -29,9 +29,9 @@ const manifest = {
         default: name,
       },
       minimumSize: { width: 540, height: 400 },
-      maximumSize: { width: 1000, height: 800 },
-      preferredDockedSize: { width: 540, height: 800 },
-      preferredFloatingSize: { width: 540, height: 800 },
+      maximumSize: { width: 1000, height: 750 },
+      preferredDockedSize: { width: 540, height: 750 },
+      preferredFloatingSize: { width: 540, height: 750 },
       icons: [
         {
           width: 23,
