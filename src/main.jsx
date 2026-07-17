@@ -45,7 +45,7 @@ export const App = () => {
   const [textfieldValue, setTextfieldValue] = useState("");
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const [forceUppercase, setForceUppercase] = useState(false);
+  const [forceUppercase, setForceUppercase] = useState(true);
   const toastTimer = useRef(null);
 
   function showToast(message) {

@@ -76,8 +76,11 @@ async function isDocumentValidForTranslation() {
 
 
 
-
-
+/// Applies text formatting based on ALLCAPS checkbox status
+function applyTextFormatting(text, appState) {
+  if (appState?.forceUppercase) return text.toUpperCase();
+  return text;
+}
 
 
 
@@ -295,7 +298,7 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
         continue;
       }
 
-      await ps.translateSmartObject(child.layer, text);
+      await ps.translateSmartObject(child.layer, applyTextFormatting(text, appState));
       // console.log(`[translated SO] "${child.layer.name}" → "${text}"`);
       processedIds.add(await ps.getSOid(child.layer)); // Mark this SO as processed to prevent duplicate translations of its instances
 
@@ -354,8 +357,8 @@ export async function translateSelected(appState) {
 
   // const confirmed = confirm(`Translate layer "${layer.name}"?`);
   // if (!confirmed) return;
-
-  const translation = appState.suggestionTextfieldValue.trim();
+  
+  const translation = applyTextFormatting(appState.suggestionTextfieldValue.trim(), appState);
 
   if (layer.kind === constants.LayerKind.TEXT) {
     await ps.translateTextLayer(layer, translation);
