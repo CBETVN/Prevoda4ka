@@ -312,6 +312,18 @@ function _collectVocabNames(group, normalizedEN) {
 function _buildPhraseCandidates(layer, normalizedEN) {
   const candidates = [];
 
+  // The layer's OWN name is always a candidate. When the container compound is
+  // polluted (two phrases sharing one folder), the compound can outscore the
+  // correct phrase — e.g. compound "CHANCE FOR BONUS FREE SPINS" scores 0.60
+  // against "BUY FREE SPINS FOR NO/YES" and wins, dumping a buy-dialog
+  // translation into a lone FREE SPINS layer. The layer's own name ("FREE
+  // SPINS" → "FREE SPINS" at 1.0) then outvotes the polluted compound.
+  // Self-regulating: it only wins when it scores HIGHER than the compound —
+  // exactly the polluted case. Ties are broken by shared-word count, so a
+  // clean compound ("YOU WIN", shared=2) still beats a partial layer name
+  // ("WIN", shared=1) because the compound is scored after this candidate.
+  candidates.push(_stripCopySuffix(layer.name));
+
   const container = _findPhraseContainer(layer, normalizedEN);
 
   // ── Ancestors between layer and container (nearest first) ──

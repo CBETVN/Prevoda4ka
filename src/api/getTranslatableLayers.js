@@ -46,7 +46,9 @@ const { constants } = photoshop;
  * Applies kind filtering, visibility filtering, SO deduplication, and phrase-line filtering.
  *
  * @param {Layer} folderLayer - The container group layer from Photoshop.
- * @param {string|null} enPhrase - The raw EN phrase string (newline-delimited) for this folder.
+ * @param {string[]|string|null} enPhrase - Either an array of cleaned EN phrase lines
+ *   (strip model — preferred, DNT lines already removed), a raw newline-delimited
+ *   EN phrase string (legacy), or null to skip the phrase-line filter.
  *   When provided, only layers whose name matches a line in the phrase are kept.
  *   e.g. "(X2)\nCHANCE\nFOR BONUS\nACTIVE" → lines {"X2","CHANCE","FOR BONUS","ACTIVE"}
  *   Layers like "Base" that are not in the phrase are excluded.
@@ -57,20 +59,27 @@ const { constants } = photoshop;
  */
 export async function getTranslatableLayers(folderLayer, enPhrase) {
   // Build a set of expected layer names from the matched EN phrase.
-  // Split by newlines ONLY — each \n-delimited line in the phrase maps to exactly
-  // one layer in the folder, so "FOR BONUS" stays as one line and matches the layer
-  // named "FOR BONUS" exactly. Splitting by spaces would tear it into "FOR"+"BONUS"
-  // and break the lookup. Strip () and [] annotations, normalize to uppercase.
-  const enPhraseLines = enPhrase
-    ? new Set(
-        enPhrase
-          .replace(/\(([^)]*)\)/g, "$1")  // (X2) → X2
-          .replace(/\[.*?\]/g, "")         // [Number] → ""
-          .split("\n")
-          .map(l => l.trim().toUpperCase())
-          .filter(Boolean)
-      )
-    : null;
+  // `enPhrase` may be:
+  //   • an ARRAY of already-cleaned lines (STRIP MODEL — DNT lines removed,
+  //     [] placeholders stripped by parseRawPhrase) → used directly. Because
+  //     DNT lines like "X2" are absent, layers named after DNT tokens are
+  //     excluded here and therefore left untouched by translation.
+  //   • a raw STRING (legacy callers) → parsed here as before: strip () keeping
+  //     content, strip [] entirely, split by newlines ONLY — "FOR BONUS" stays
+  //     one line and matches the layer named "FOR BONUS" exactly.
+  //   • null → filter skipped (all visible SO+TEXT layers returned).
+  const enPhraseLines = Array.isArray(enPhrase)
+    ? new Set(enPhrase.map(l => l.trim().toUpperCase()).filter(Boolean))
+    : enPhrase
+      ? new Set(
+          enPhrase
+            .replace(/\(([^)]*)\)/g, "$1")  // (X2) → X2
+            .replace(/\[.*?\]/g, "")         // [Number] → ""
+            .split("\n")
+            .map(l => l.trim().toUpperCase())
+            .filter(Boolean)
+        )
+      : null;
 
   const candidates = getAllVisibleLayers(folderLayer.layers).filter(
     layer =>

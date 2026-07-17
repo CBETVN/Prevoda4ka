@@ -804,3 +804,43 @@ No logic is touched by any of these — all are pure read + log.
 
 **How the Excel and PSD connect:**
 Each English phrase in the Excel might be one word (`WIN`) or multiple lines (`FREE\nSPINS`). In the PSD, each line becomes a separate layer name inside a folder. The plugin matches layer names to Excel lines and assigns the correct translated line to each layer. Lines wrapped in `()` like `(SUPER)` mean "this layer exists but don't translate it." Lines in `[]` like `[Number]` are placeholders that get ignored entirely — they don't count as layers. If layer names match the Excel perfectly, translation is fully automatic. If names don't match, the plugin falls back to guessing by position in the layer stack, and if confidence is too low it skips the folder entirely to avoid mistakes.
+
+---
+
+## Session — July 17 2026 — Strip model for DNT + phraseGuesser layer-name candidate
+
+Two user-reported bugs traced and fixed in one design session:
+
+**Bug 1 — FREE SPINS SO translated to "KAUFEN SIE FREISPIELE FÜR NEIN/JA"**
+A folder containing SOs from TWO different phrases (`CHANCE FOR BONUS copy` + `FREE SPINS`) produced the compound "CHANCE FOR BONUS FREE SPINS", which word-overlap-scored 0.60 against the unrelated phrase `BUY\nFREE SPINS\nFOR\nNO/YES` (the stopword "FOR" bridged them; tie against `(X2)\nCHANCE\nFOR BONUS` broken by Excel row order). The phrase-line filter then discarded `CHANCE FOR BONUS copy`, leaving 1 layer with confidence 1.0, and tail-absorption dumped the entire wrong 3-line DE phrase into it.
+
+**Fix (phraseGuesser.js — `_buildPhraseCandidates`):** the layer's own name (copy-suffix stripped) is now always pushed as a scoring candidate. "FREE SPINS" scores 1.0 against the `FREE SPINS` row and outvotes the polluted 0.60 compound. Self-regulating: the layer name only wins when it scores strictly higher than the compound — which is precisely the polluted-folder case. Ties are broken by shared-word count, so clean compounds still win.
+**Revert:** delete the `candidates.push(_stripCopySuffix(layer.name));` line.
+
+**Bug 2 — `(x2)` do-not-translate rule broke when no `x2` layer existed**
+The DNT skip was keyed on LAYER NAMES: `doNotTranslate.has(layer.name)`. In a folder without an `x2` layer the skip never fired, slot 0 was never consumed, and every layer shifted one translation slot back — CHANCE got "X2" written into it, FOR got "CHANCE". Same mechanism as the previously documented ACTIVE→"AUF DEN BONUS" bug (missing phrase line shifts the `uniquePosition` counter).
+
+**Fix — the STRIP MODEL (parsingLogic.js `processMatchedFolder` + `matchLayersToLines`, getTranslatableLayers.js):**
+Slot-consumption bookkeeping replaced wholesale. DNT lines are now removed from BOTH sides before pairing:
+
+1. `dntTokens` built from `()` lines in the raw EN phrase (existing `buildDoNotTranslateSet`, unchanged), then those lines are **deleted from `enLines`**.
+2. Any `transLines` line that **verbatim-equals a DNT token** is deleted too — handles both translator habits (DE kept `(X2)` → stripped; DE dropped the line → nothing to strip). Either way both cleaned lists contain only translatable content.
+3. The cleaned `enLines` ARRAY is passed to `getTranslatableLayers` (which now accepts array | string | null) — layers named after DNT tokens no longer match any expected line, so they're excluded and left untouched, whether or not they exist.
+4. `matchLayersToLines` assignment: **equal cleaned lengths** (the normal case) → direct `transLines[enIndex]` positional pairing — a missing layer cannot shift its neighbours, unclaimed pairs go unused. This also fixes the documented ACTIVE bug. **Unequal lengths** (translator merged/expanded) → the existing sequential + tail-absorb path, kept verbatim — last layer absorbs surplus, single-SO folders receive the entire translation, no translated text is ever dropped, space-join kept.
+5. The DNT name-guard in `matchLayersToLines` remains as a safety net but no longer advances any counter (there is no slot to consume — the lines don't exist in the cleaned lists).
+
+**Design principles settled in this session:**
+- Slot i in EN maps to slot i in the translation — the translator owns reordering (BUY/BONUS → BONUS/KAUFEN is correct behavior, purely positional transfer).
+- Untranslated beats mistranslated: layers with unmatched names are left alone (fail-loud), never positionally guessed. The stack-index fallback rung is effectively unreachable in the real flow since unmatched layers are filtered before matching.
+- Excel input hygiene (e.g. `[12]` in EN vs `(12)` in DE on the same row) is the editor's responsibility — the plugin does not chase asymmetric-annotation edge cases.
+
+**Files touched:** `phraseGuesser.js` (1 function), `parsingLogic.js` (2 functions), `getTranslatableLayers.js` (1 function, backward-compatible param). Nothing else — photoshop.js, fontManager.js, recursive SO translation, font replacement, canvas cropping all untouched.
+
+**Test checklist for next PS session** (base phrase `(x2)/Chance/For Bonus`, DE `(X2)/CHANCE/AUF DEN BONUS`):
+- [ ] Folder `[x2, Chance, For Bonus]` (bgrX2) → x2 untouched, CHANCE, AUF DEN BONUS
+- [ ] Folder `[Chance, FOR, bonus]` (Group 1) → CHANCE, AUF DEN BONUS to first word-match, third untouched — "X2" written NOWHERE
+- [ ] Folder `[For Bonus]` only → gets AUF DEN BONUS (direct enIndex, no shift)
+- [ ] DE cell WITHOUT the (X2) line → same results as above
+- [ ] DE dropped (x2) AND split lines (`Chance/AUF/DER BONUS`) → Chance="CHANCE", For Bonus="AUF DER BONUS" (tail-join)
+- [ ] `BUY/BONUS` → `BONUS/KAUFEN` reversal preserved
+- [ ] The original repro: buyBonusBanner FREE SPINS → must now get "FREISPIELE", not the buy-dialog phrase

@@ -217,27 +217,37 @@ function layerNameMatchesEnVocab(layerName, allEnglishWords, threshold = 0.8) {
 
 export async function processMatchedFolder(folderLayer, appState, matchedPhrase, translatedPhrase) {
 
-  // STEP 1: Parse the EN phrase into individual words (one per array entry).
-  // e.g. "BUY\nBONUS" → ["BUY", "BONUS"]
-  // These are used to match against child layer names inside the folder.
-  const enLines = parseRawPhrase(matchedPhrase, "linesArray");
+  // STEP 1 (STRIP MODEL): Build the do-not-translate token set from () lines
+  // in the raw EN phrase, then parse the phrase into lines and REMOVE the DNT
+  // lines entirely. DNT tokens are language-neutral by definition — never
+  // translated, never written — so they take no part in pairing. Their absence
+  // means a missing "x2" layer can never shift its neighbours.
+  // e.g. "(X2)\nCHANCE\nFOR BONUS" → dntTokens={X2}, enLines=["CHANCE","FOR BONUS"]
+  const dntTokens = buildDoNotTranslateSet(matchedPhrase);
+  const enLines = parseRawPhrase(matchedPhrase, "linesArray")
+    .filter(line => !dntTokens.has(line.trim().toUpperCase()));
   // console.log("[processMatchedFolder] EN lines:", enLines);
   const transPhrase = translatedPhrase;
 
   // STEP 2: Guard — if there's no translation for this phrase, nothing to do.
   if (!transPhrase) return;
 
-  // STEP 3: Parse the translated phrase into individual words the same way.
-  // e.g. "BONUS KAUFEN" → ["BONUS", "KAUFEN"]
-  // The count of transLines may differ from enLines — e.g. EN has 3 words, DE merges two into one.
-  // matchLayersToLines handles this with tail-anchoring logic.
-  const transLines = parseRawPhrase(transPhrase, "linesArray");
+  // STEP 3 (STRIP MODEL): Parse the translated phrase into lines and remove
+  // any line that verbatim-equals a DNT token. This handles both translator
+  // habits identically: DE kept "(X2)" → stripped here; DE dropped the line →
+  // nothing to strip. Either way both cleaned lists contain only translatable
+  // content and pair positionally.
+  // e.g. "X2\nCHANCE\nAUF DEN BONUS" → ["CHANCE","AUF DEN BONUS"]
+  const transLines = parseRawPhrase(transPhrase, "linesArray")
+    .filter(line => !dntTokens.has(line.trim().toUpperCase()));
   // console.log("[processMatchedFolder] translated lines:", transLines);
 
   // STEP 4: Get translatable child layers and soIdMap from single-source-of-truth API.
   // Handles recursive flatten, kind filter (SO + TEXT only), visibility filter, and SO dedup.
   // soIdMap (layer.id → SmartObjectMoreID) is built for free during the dedup pass.
-  const { layers: translatableLayers, soIdMap } = await getTranslatableLayers(folderLayer, matchedPhrase);
+  // The CLEANED enLines array is passed (DNT lines already removed), so layers
+  // named after DNT tokens (e.g. "x2") are excluded here → left untouched.
+  const { layers: translatableLayers, soIdMap } = await getTranslatableLayers(folderLayer, enLines);
   const childLayers = translatableLayers.map((layer, i) => ({
     id:         layer.id,
     name:       layer.name,
@@ -245,13 +255,11 @@ export async function processMatchedFolder(folderLayer, appState, matchedPhrase,
     layer,
   }));
 
-  // STEP 5: Build the do-not-translate set from the raw EN phrase.
-  // Lines wrapped entirely in () — e.g. "(X2)" — mark layers that must be left
-  // untouched in every language. The set is derived on-demand from the matched
-  // EN phrase so it's always in sync with the Excel data and requires no
-  // hardcoding. Passed into matchLayersToLines so it can skip those layers while
-  // still advancing the trans-slot counter to preserve positional alignment.
-  const doNotTranslate = buildDoNotTranslateSet(matchedPhrase);
+  // STEP 5: dntTokens (built in STEP 1) is passed to matchLayersToLines as a
+  // safety guard only: a layer whose name equals a DNT token is left untouched.
+  // Normally such layers never get this far — the cleaned enLines already
+  // exclude them in getTranslatableLayers — but the guard costs nothing.
+  const doNotTranslate = dntTokens;
 
   // STEP 6: Match each child layer to a translated line.
   // Uses a confidence ladder: exact name match → fuzzy name match → stack index fallback.
@@ -533,14 +541,12 @@ function matchLayersToLines(childLayers, enLines, transLines, doNotTranslate = n
 
   resolved.forEach(({ layer, matchType, enIndex }, resolvedIndex) => {
 
-    // Skip layers marked as do-not-translate (entire EN line was wrapped in parentheses).
-    // The layer is left untouched (null) but its enIndex is still added to assignedEnIndices
-    // so the trans-slot counter advances normally — subsequent layers receive the correct
-    // translation line without positional shift.
-    // e.g. phrase "(X2)\nCHANCE\nFOR BONUS": X2 skipped at slot 0 → CHANCE gets transLines[1].
+    // Skip layers whose name equals a DNT token (safety guard — under the strip
+    // model these layers are normally excluded before reaching this function).
+    // Left untouched (null). Does NOT advance any counter: DNT lines are absent
+    // from both enLines and transLines, so there is no slot to consume.
     if (doNotTranslate.has(layer.name.trim().toUpperCase())) {
       result.set(layer.id, null);
-      assignedEnIndices.add(enIndex);
       return;
     }
 
@@ -550,12 +556,31 @@ function matchLayersToLines(childLayers, enLines, transLines, doNotTranslate = n
       return;
     }
 
-    // 0-based position of this EN line among the unique ones assigned so far
-    const uniquePosition = assignedEnIndices.size;
+    // EQUAL LENGTHS — the translator preserved line structure (the normal case).
+    // Pair strictly by position: EN line i ↔ trans line i. A layer missing from
+    // the PSD cannot shift its neighbours because nobody's index depends on
+    // anyone else's presence. Unclaimed pairs are simply never used.
+    // e.g. EN [CHANCE, FOR BONUS] / DE [CHANCE, AUF DEN BONUS]:
+    //      layer "FOR BONUS" (enIndex 1) → "AUF DEN BONUS" even if "CHANCE"
+    //      has no layer in this folder.
+    if (enLines.length === transLines.length) {
+      if (enIndex >= transLines.length) {
+        // stackIndex fallback can produce an out-of-range index — leave untouched
+        result.set(layer.id, null);
+      } else {
+        result.set(layer.id, { text: transLines[enIndex], matchType, enIndex });
+      }
+      assignedEnIndices.add(enIndex);
+      return;
+    }
 
-    // Sequential — no forced gaps.
-    // Last assigned layer absorbs remaining trans lines (translator expanded).
-    // Layers beyond the last trans slot get null (translator contracted).
+    // UNEQUAL LENGTHS — the translator restructured (merged or expanded lines),
+    // so strict positional pairs are meaningless. Distribute sequentially among
+    // the layers that are present; the last layer absorbs any surplus trans
+    // lines (no translated text is ever dropped — a single-SO folder receives
+    // the entire translation). Layers beyond the last trans line get null
+    // (translator contracted).
+    const uniquePosition = assignedEnIndices.size;
     if (uniquePosition >= transLines.length) {
       result.set(layer.id, null);
     } else {
