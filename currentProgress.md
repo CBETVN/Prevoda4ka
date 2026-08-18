@@ -58,6 +58,42 @@
 
 **Fix:** Replaced snapshot + splice + `some()` pattern with a module-level `processedIds = new Set()`. Array is never mutated. Deduplication is done via `processedIds.has(layerSOId)` — O(1). Set is cleared at the start of each `translateAll` run.
 
+**Proposed Fix**
+
+
+```js
+  // TAIL ANCHOR (equal-length case only) — strict positional pairing above writes
+  // transLines[i] to whichever layer resolved to EN index i. When the PSD has fewer
+  // layers than the phrase has lines (two EN concepts merged into one SO, e.g. a
+  // single "CREDITS WON" layer covering EN lines "CREDITS" and "WON"), the leftover
+  // trans lines are never written anywhere and vanish with no error or warning.
+  //
+  // Fix: give each assigned layer the full run of trans lines from just after the
+  // previous assigned layer's slot through its own, and let the LAST assigned layer
+  // run to the end. No translated text is ever dropped — the same rule the
+  // unequal-length branch below already applies.
+  //
+  // Lines BEFORE the first assigned slot are deliberately NOT absorbed: an EN line
+  // whose layer is simply absent must not shift its neighbours. e.g. EN
+  // [CHANCE, FOR BONUS] with only a "FOR BONUS" layer keeps "AUF DEN BONUS".
+  //
+  // In the normal 1:1 case every run is a single line, so this is a no-op.
+  if (enLines.length === transLines.length) {
+    // Filled slots only. assignedEnIndices cannot be used here — it also collects
+    // indices whose layer was set to null (out-of-range stackIndex, above).
+    const filled = [...result.entries()]
+      .filter(([, assignment]) => assignment !== null)
+      .sort((a, b) => a[1].enIndex - b[1].enIndex);
+
+    filled.forEach(([layerId, assignment], i) => {
+      const start = i === 0 ? assignment.enIndex : filled[i - 1][1].enIndex + 1;
+      const end   = i === filled.length - 1 ? transLines.length - 1 : assignment.enIndex;
+      const text  = transLines.slice(start, end + 1).join(" ");
+      if (text !== assignment.text) result.set(layerId, { ...assignment, text });
+    });
+  }
+```
+
 ---
 
 ### 2. Dead parameters removed from `processMatchedFolder` ✅ FIXED
