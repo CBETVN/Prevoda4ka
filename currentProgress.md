@@ -39,7 +39,19 @@
 
 ---
 
-## Session log
+## KNOWN BUGS
+
+### NEW — Merged PSD layer loses trailing translated line when EN/translated line counts match 🔍 UNRESOLVED
+
+**Symptom:** Folder `outroCreditsPortrait copy` — EN phrase `TOTAL\nCREDITS\nWON` (3 lines), HR translation `UKUPNO\nOSVOJENIH\nBODOVA` (3 lines). PSD layers: `TOTAL` (its own SO) and `CREDITS WON` (a single merged SO covering two EN lines) — only 2 real layers for 3 EN lines. Final render shows `UKUPNO` / `OSVOJENIH` only — `BODOVA` never lands anywhere, with no error or warning.
+
+**Root cause:** `matchLayersToLines` (`parsingLogic.js`) gates its tail-absorption logic behind `if (enLines.length === transLines.length)`. That condition compares the raw line counts of the EN and translated Excel cell strings to each other — it never compares either one to how many PSD layers actually exist. Since both phrase strings have exactly 3 lines, the function treats this as "translator preserved structure" and takes the strict positional-pairing branch (`result.set(layer.id, { text: transLines[enIndex], ... })`), returning before the tail-absorption code below it (`uniquePosition` / `isLastLayer` / `transLines.slice(uniquePosition).join(" ")`) is ever reached.
+
+`CREDITS WON` fuzzy-matches (`"CREDITS WON".startsWith("CREDITS")`) to EN index 1 only — `findIndex` stops at the first hit and never notices the layer name also covers "WON" (EN index 2). It receives `transLines[1]` = `"OSVOJENIH"` and nothing else. No layer ever resolves to EN index 2, so `transLines[2]` = `"BODOVA"` is never assigned to anyone.
+
+**Contrast with the "additional / retrigger" bug:** that one was the Excel phrase merging multiple concepts onto one line while the PSD kept them as separate layers (unequal-length branch triggered, over-absorbed the whole line onto one layer). This is the mirror case — Excel kept the lines separate (equal counts) while the PSD merged two concepts into one layer — so the equal-length branch is taken instead, and no absorption happens at all.
+
+**Status:** Not fixed yet — root cause confirmed, solution not yet designed. The `enLines.length === transLines.length` check is answering "did the translator preserve line structure," not "does every EN line have a matching PSD layer," and those two questions diverge exactly in cases like this one.
 
 ### 1. Skipping layers during iteration (the BUY bug) ✅ FIXED
 **Problem:** `for...of` over `smartObjectsForProcessing` while splicing elements out of it mid-loop. After splicing 4 instances of `testSO` (indices 0–3), the array shifted — `BUY` moved to index 0 but the iterator advanced to index 1, skipping it entirely.
