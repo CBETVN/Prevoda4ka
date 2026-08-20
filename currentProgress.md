@@ -94,6 +94,63 @@
   }
 ```
 
+### Second case confirmed — `free spins` / `won` (HR)
+
+EN `[+12]\nFREE\nSPINS\nWON` -> enLines `[FREE, SPINS, WON]` (placeholder stripped).
+HR `[+12]\nBESPLATNIH\nVRTNJI\nOSVOJENI` -> transLines `[BESPLATNIH, VRTNJI, OSVOJENI]`.
+Layers: `free spins`, `won` — 2 layers, 3 lines. `VRTNJI` vanishes.
+
+Same root cause: `3 === 3` → strict branch (`parsingLogic.js:566`), returns at :574.
+`"FREE SPINS".startsWith("FREE")` → `findIndex` stops at enIndex 0, never sees it also
+covers `SPINS` (index 1). `won` → exact → enIndex 2. Index 1 is orphaned.
+
+The layer is NOT filtered out upstream — `getTranslatableLayers.js:100` passes it via its
+`startsWith` clause. The filter is fine.
+
+**The proposed tail-anchor fix does NOT fix this case.** `filled = [free spins(0), won(2)]`:
+- `free spins` first, not last → `start=0, end=0` → `BESPLATNIH` (unchanged)
+- `won` last → `start=1, end=2` → **`"VRTNJI OSVOJENI"`**
+
+The word stops vanishing but lands on the wrong layer. The tail anchor only lands correctly
+when the merged layer happens to be LAST — true for `CREDITS WON`, false here. Position is
+not a reliable proxy for which layer owns the surplus.
+
+### Why the existing concatenation logic never fires
+
+Two concat mechanisms exist; neither can catch this:
+
+1. **`parsePhraseForSuggestions`** (`parsingLogic.js:700`) — sliding window over adjacent line
+   pairs. Would produce `"BESPLATNIH VRTNJI"`. But its only caller is `generateSuggestions`
+   → `main.jsx:112`, the manual single-layer dropdown. `translateAll` never calls it, and it
+   takes no `layer` argument — it enumerates candidate strings for a human, it does not match.
+   Also only does *adjacent pairs*, so a 3-line merged layer would defeat it anyway.
+2. **Tail absorption** (`parsingLogic.js:589`) — the real guard, but it lives in the
+   unequal-lengths branch, unreachable after the `return` at :574.
+
+**The structural reason:** both concatenate on the *translated* side — they redistribute
+surplus `transLines`. The failure originates on the *EN* side: nothing ever recognises that
+`free spins` covers two EN lines. By the time either guard could run, the layer is already
+stamped `enIndex: 0`. They are downstream remedies for an upstream misdiagnosis, and they can
+only ever *guess* where the surplus belongs.
+
+### Revised fix — EN-side span matching
+
+Resolve each layer to an enIndex **span**, not a single index: match the normalised layer name
+against consecutive runs of `enLines` joined by space, longest run first. Assign
+`transLines.slice(start, end + 1).join(" ")` and add the whole span to `assignedEnIndices`.
+
+| layer | span | text |
+|---|---|---|
+| `FREE SPINS` = `enLines[0..1]` | [0,1] | `BESPLATNIH VRTNJI` ✓ |
+| `WON` = `enLines[2..2]` | [2,2] | `OSVOJENI` ✓ |
+| `CREDITS WON` = `enLines[1..2]` | [1,2] | `OSVOJENIH BODOVA` ✓ |
+| `TOTAL` = `enLines[0..0]` | [0,0] | `UKUPNO` ✓ |
+
+Fixes both cases for the right reason — it answers "how many EN lines does this layer cover?"
+instead of inferring it from position. The existing `startsWith` fuzzy case
+(`"CREDITS copy 2"`) falls out as a span of length 1, so it keeps working.
+
+
 ---
 
 ### 2. Dead parameters removed from `processMatchedFolder` ✅ FIXED
